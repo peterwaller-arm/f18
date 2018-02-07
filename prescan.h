@@ -20,7 +20,6 @@
 #include <optional>
 
 namespace Fortran {
-namespace parser {
 
 class Prescanner {
 public:
@@ -110,6 +109,5 @@ private:
   int delimiterNesting_{0};
   Preprocessor preprocessor_;
 };
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PRESCAN_H_

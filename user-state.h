@@ -10,7 +10,6 @@
 #include <unordered_set>
 
 namespace Fortran {
-namespace parser {
 class UserState {
 public:
   using Label = std::uint64_t;
@@ -36,6 +35,5 @@ private:
   std::unordered_set<Label> doLabels_;
   int nonlabelDoConstructNestingDepth_{0};
 };
-}  // namespace parser
-}  // namespace Fortran
+};  // namespace Fortran
 #endif  // FORTRAN_USER_STATE_H_

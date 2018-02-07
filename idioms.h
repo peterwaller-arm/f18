@@ -34,7 +34,6 @@ struct is_trivially_copy_constructible<optional<list<A>>> : false_type {};
 using namespace std::string_literals;  // enable "this is a std::string"s
 
 namespace Fortran {
-namespace parser {
 
 // Helper templates for combining a list of lambdas into an anonymous
 // struct for use with std::visit() on a std::variant<> sum type.
@@ -58,7 +57,6 @@ template<typename... LAMBDAS> visitors(LAMBDAS... x)->visitors<LAMBDAS...>;
 template<typename A> bool operator!(const std::optional<A> &x) {
   return !x.has_value();
 }
-}  // namespace parser
 }  // namespace Fortran
 
 // For switch statements without default: labels.
@@ -75,7 +73,6 @@ template<typename A> struct BadType : std::false_type {};
 
 // Formatting
 namespace Fortran {
-namespace parser {
 template<typename A>
 std::ostream &operator<<(std::ostream &o, const std::optional<A> &x) {
   if (x.has_value()) {
@@ -119,6 +116,5 @@ std::ostream &operator<<(std::ostream &o, const std::variant<As...> &x) {
   return std::visit(
       [&o](const auto &y) -> std::ostream & { return o << y; }, x);
 }
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_IDIOMS_H_

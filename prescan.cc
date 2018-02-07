@@ -8,7 +8,6 @@
 #include <vector>
 
 namespace Fortran {
-namespace parser {
 
 CharBuffer Prescanner::Prescan(const SourceFile &source) {
   sourceFile_ = &source;
@@ -491,5 +490,4 @@ void Prescanner::PayNewlineDebt(CharBuffer *out) {
     out->Put('\n');
   }
 }
-}  // namespace parser
 }  // namespace Fortran

@@ -83,7 +83,6 @@
   }
 
 namespace Fortran {
-namespace parser {
 
 // These are the unavoidable recursively-defined productions of Fortran.
 // Some references to the representations of their parses require
@@ -3223,6 +3222,5 @@ std::ostream &operator<<(std::ostream &o, const LoopBounds<A> &x) {
   return o << "(LoopBounds " << x.name << ' ' << x.lower << ' ' << x.upper
            << ' ' << x.step << ')';
 }
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PARSE_TREE_H_

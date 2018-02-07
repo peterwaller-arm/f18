@@ -14,7 +14,6 @@
 // TODO: Port to Windows &c.
 
 namespace Fortran {
-namespace parser {
 
 SourceFile::~SourceFile() { Close(); }
 
@@ -123,5 +122,4 @@ void SourceFile::Close() {
   }
   path_.clear();
 }
-}  // namespace parser
 }  // namespace Fortran

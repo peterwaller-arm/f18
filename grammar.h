@@ -24,7 +24,6 @@
 #include <utility>
 
 namespace Fortran {
-namespace parser {
 
 // The productions that follow are derived from the draft Fortran 2018
 // standard, with some necessary modifications to remove left recursion
@@ -3644,6 +3643,5 @@ TYPE_CONTEXT_PARSER("PAUSE statement",
 //     is used only via scalar-int-variable
 //   R1030 default-char-constant-expr -> default-char-expr
 //     is only used via scalar-default-char-constant-expr
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_GRAMMAR_H_

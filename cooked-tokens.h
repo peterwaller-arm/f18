@@ -18,7 +18,6 @@
 #include <string>
 
 namespace Fortran {
-namespace parser {
 
 class CharPredicateGuardParser {
 public:
@@ -431,6 +430,5 @@ template<typename PA> inline constexpr auto optionalBeforeColons(const PA &p) {
   return "," >> p / "::" || "::" >> construct<typename PA::resultType>{} ||
       !","_tok >> construct<typename PA::resultType>{};
 }
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_COOKED_TOKENS_H_

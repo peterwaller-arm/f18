@@ -4,7 +4,6 @@
 #include <cstring>
 
 namespace Fortran {
-namespace parser {
 
 char *CharBuffer::FreeSpace(size_t *n) {
   int offset{LastBlockOffset()};
@@ -46,5 +45,4 @@ void CharBuffer::CopyToContiguous(char *data) {
   }
   CHECK(to == data + bytes_);
 }
-}  // namespace parser
 }  // namespace Fortran

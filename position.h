@@ -8,7 +8,6 @@
 #include <ostream>
 
 namespace Fortran {
-namespace parser {
 
 class Position {
 public:
@@ -71,6 +70,5 @@ private:
 };
 
 std::ostream &operator<<(std::ostream &, const Position &);
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_POSITION_H_

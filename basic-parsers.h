@@ -26,7 +26,6 @@
 #include <string>
 
 namespace Fortran {
-namespace parser {
 
 // fail<A>("...") returns a parser that never succeeds.  It reports an
 // error message at the current position.  The result type is unused,
@@ -1317,6 +1316,5 @@ constexpr struct GetPosition {
   }
 } getPosition;
 
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_BASIC_PARSERS_H_

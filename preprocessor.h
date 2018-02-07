@@ -19,7 +19,6 @@
 #include <vector>
 
 namespace Fortran {
-namespace parser {
 
 class CharBuffer;
 class Prescanner;
@@ -51,12 +50,11 @@ private:
   const char *data_{nullptr};
   size_t bytes_{0};
 };
-}  // namespace parser
 }  // namespace Fortran
 
 // Specializations to enable std::unordered_map<CharPointerWithLength, ...>
-template<> struct std::hash<Fortran::parser::CharPointerWithLength> {
-  size_t operator()(const Fortran::parser::CharPointerWithLength &x) const {
+template<> struct std::hash<Fortran::CharPointerWithLength> {
+  size_t operator()(const Fortran::CharPointerWithLength &x) const {
     size_t hash{0}, bytes{x.size()};
     for (size_t j{0}; j < bytes; ++j) {
       hash = (hash * 31) ^ x[j];
@@ -65,9 +63,9 @@ template<> struct std::hash<Fortran::parser::CharPointerWithLength> {
   }
 };
 
-template<> struct std::equal_to<Fortran::parser::CharPointerWithLength> {
-  bool operator()(const Fortran::parser::CharPointerWithLength &x,
-      const Fortran::parser::CharPointerWithLength &y) const {
+template<> struct std::equal_to<Fortran::CharPointerWithLength> {
+  bool operator()(const Fortran::CharPointerWithLength &x,
+      const Fortran::CharPointerWithLength &y) const {
     return x.size() == y.size() &&
         std::memcmp(static_cast<const void *>(&x[0]),
             static_cast<const void *>(&y[0]), x.size()) == 0;
@@ -75,7 +73,6 @@ template<> struct std::equal_to<Fortran::parser::CharPointerWithLength> {
 };
 
 namespace Fortran {
-namespace parser {
 
 // Buffers a contiguous sequence of characters that has been partitioned into
 // a sequence of preprocessing tokens.
@@ -202,6 +199,5 @@ private:
   std::unordered_map<CharPointerWithLength, Definition> definitions_;
   std::stack<CanDeadElseAppear> ifStack_;
 };
-}  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PREPROCESSOR_H_

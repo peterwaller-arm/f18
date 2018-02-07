@@ -1,7 +1,6 @@
 #include "message.h"
 
 namespace Fortran {
-namespace parser {
 
 std::ostream &operator<<(std::ostream &o, const Message &msg) {
   if (msg.context()) {
@@ -22,5 +21,4 @@ std::ostream &operator<<(std::ostream &o, const Messages &ms) {
   }
   return o;
 }
-}  // namespace parser
 }  // namespace Fortran
