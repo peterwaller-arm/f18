@@ -46,7 +46,6 @@ public:
   }
   A &operator*() const { return *p_; }
   A *operator->() { return p_; }
-  const A *operator->() const { return p_; }
 
 private:
   A *p_{nullptr};
