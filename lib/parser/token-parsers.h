@@ -23,8 +23,8 @@ public:
   using resultType = char;
   constexpr CharPredicateGuardParser(
       const CharPredicateGuardParser &) = default;
-  constexpr CharPredicateGuardParser(bool (*f)(char), MessageFixedText t)
-    : predicate_{f}, text_{t} {}
+  constexpr CharPredicateGuardParser(bool (*f)(char), const char *msg)
+    : predicate_{f}, message_{msg} {}
   std::optional<char> Parse(ParseState *state) const {
     auto at = state->GetLocation();
     if (std::optional<char> result{nextChar.Parse(state)}) {
@@ -32,13 +32,13 @@ public:
         return result;
       }
     }
-    state->PutMessage(at, text_);
+    state->PutMessage(at, message_);
     return {};
   }
 
 private:
   bool (*const predicate_)(char);
-  const MessageFixedText text_;
+  const char *const message_;
 };
 
 static inline constexpr bool IsDecimalDigit(char ch) { return isdigit(ch); }
@@ -55,11 +55,10 @@ static inline constexpr bool IsLetter(char ch) { return isalpha(ch); }
 
 static inline constexpr char ToLower(char &&ch) { return tolower(ch); }
 
-constexpr CharPredicateGuardParser digit{
-    IsDecimalDigit, "expected digit"_en_US};
+constexpr CharPredicateGuardParser digit{IsDecimalDigit, "expected digit"};
 
 constexpr auto letter = applyFunction(
-    ToLower, CharPredicateGuardParser{IsLetter, "expected letter"_en_US});
+    ToLower, CharPredicateGuardParser{IsLetter, "expected letter"});
 
 template<char good> class CharMatch {
 public:
@@ -72,7 +71,7 @@ public:
       result.reset();
     }
     if (!result) {
-      state->PutMessage(at, MessageExpectedText{good});
+      state->PutMessage(at, "expected '"s + good + '\'');
     }
     return {result};
   }
@@ -99,7 +98,7 @@ public:
   using resultType = Success;
   constexpr TokenStringMatch(const TokenStringMatch &) = default;
   constexpr TokenStringMatch(const char *str, size_t n)
-    : str_{str}, bytes_{n} {}
+    : str_{str}, length_{n} {}
   constexpr TokenStringMatch(const char *str) : str_{str} {}
   std::optional<Success> Parse(ParseState *state) const {
     auto at = state->GetLocation();
@@ -108,10 +107,10 @@ public:
     }
     const char *p{str_};
     std::optional<char> ch;  // initially empty
-    for (size_t j{0}; j < bytes_ && *p != '\0'; ++j, ++p) {
+    for (size_t j{0}; j < length_ && *p != '\0'; ++j, ++p) {
       const auto spaceSkipping{*p == ' '};
       if (spaceSkipping) {
-        if (j + 1 == bytes_ || p[1] == ' ' || p[1] == '\0') {
+        if (j + 1 == length_ || p[1] == ' ' || p[1] == '\0') {
           continue;  // redundant; ignore
         }
       }
@@ -129,7 +128,7 @@ public:
       } else if (*ch == tolower(*p)) {
         ch.reset();
       } else {
-        state->PutMessage(at, MessageExpectedText{str_, bytes_});
+        state->PutMessage(at, "expected '"s + str_ + '\'');
         return {};
       }
     }
@@ -138,7 +137,7 @@ public:
 
 private:
   const char *const str_;
-  const size_t bytes_{std::numeric_limits<size_t>::max()};
+  const size_t length_{std::numeric_limits<size_t>::max()};
 };
 
 constexpr TokenStringMatch operator""_tok(const char str[], size_t n) {
@@ -196,7 +195,7 @@ struct CharLiteralChar {
     }
     char ch{*och};
     if (ch == '\n') {
-      state->PutMessage(at, "unclosed character constant"_en_US);
+      state->PutMessage(at, "unclosed character constant");
       return {};
     }
     if (ch != '\\' || !state->enableBackslashEscapesInCharLiterals()) {
@@ -216,15 +215,13 @@ struct CharLiteralChar {
     case '"':
     case '\'':
     case '\\': return {Result::Escaped(ch)};
-    case '\n':
-      state->PutMessage(at, "unclosed character constant"_en_US);
-      return {};
+    case '\n': state->PutMessage(at, "unclosed character constant"); return {};
     default:
       if (IsOctalDigit(ch)) {
         ch -= '0';
         for (int j = (ch > 3 ? 1 : 2); j-- > 0;) {
-          static constexpr auto octalDigit = attempt(CharPredicateGuardParser{
-              IsOctalDigit, "expected octal digit"_en_US});
+          static constexpr auto octalDigit = attempt(
+              CharPredicateGuardParser{IsOctalDigit, "expected octal digit"});
           if ((och = octalDigit.Parse(state)).has_value()) {
             ch = 8 * ch + *och - '0';
           }
@@ -233,13 +230,13 @@ struct CharLiteralChar {
         ch = 0;
         for (int j = 0; j++ < 2;) {
           static constexpr auto hexDigit = attempt(CharPredicateGuardParser{
-              IsHexadecimalDigit, "expected hexadecimal digit"_en_US});
+              IsHexadecimalDigit, "expected hexadecimal digit"});
           if ((och = hexDigit.Parse(state)).has_value()) {
             ch = 16 * ch + HexadecimalDigitValue(*och);
           }
         }
       } else {
-        state->PutMessage(at, "bad escaped character"_en_US);
+        state->PutMessage(at, "bad escaped character");
       }
       return {Result::Escaped(ch)};
     }
@@ -324,7 +321,7 @@ struct BOZLiteral {
     }
 
     if (content.empty()) {
-      state->PutMessage(at, "no digit in BOZ literal"_en_US);
+      state->PutMessage(at, "no digit in BOZ literal");
       return {};
     }
 
@@ -332,13 +329,13 @@ struct BOZLiteral {
     for (auto digit : content) {
       digit = HexadecimalDigitValue(digit);
       if ((digit >> *shift) > 0) {
-        state->PutMessage(at, "bad digit in BOZ literal"_en_US);
+        state->PutMessage(at, "bad digit in BOZ literal");
         return {};
       }
       std::uint64_t was{value};
       value <<= *shift;
       if ((value >> *shift) != was) {
-        state->PutMessage(at, "excessive digits in BOZ literal"_en_US);
+        state->PutMessage(at, "excessive digits in BOZ literal");
         return {};
       }
       value |= digit;
@@ -371,7 +368,7 @@ struct DigitString {
       value += digitValue;
     }
     if (overflow) {
-      state->PutMessage(at, "overflow in decimal literal"_en_US);
+      state->PutMessage(at, "overflow in decimal literal");
     }
     return {value};
   }
@@ -397,8 +394,7 @@ struct HollerithLiteral {
     for (auto j = *charCount; j-- > 0;) {
       std::optional<char> ch{nextChar.Parse(state)};
       if (!ch || !isprint(*ch)) {
-        state->PutMessage(
-            at, "insufficient or bad characters in Hollerith"_en_US);
+        state->PutMessage(at, "insufficient or bad characters in Hollerith");
         return {};
       }
       content += *ch;

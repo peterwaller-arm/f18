@@ -8,7 +8,6 @@
 // fixed form character literals on truncated card images, file
 // inclusion, and driving the Fortran source preprocessor.
 
-#include "message.h"
 #include "provenance.h"
 #include "token-sequence.h"
 #include <optional>
@@ -49,8 +48,7 @@ public:
   // Callbacks for use by Preprocessor.
   std::optional<TokenSequence> NextTokenizedLine();
   Provenance GetCurrentProvenance() const { return GetProvenance(at_); }
-  Message &Complain(MessageFixedText);
-  Message &Complain(MessageFormattedText &&);
+  void Complain(const std::string &message);
 
 private:
   void BeginSourceLine(const char *at) {
