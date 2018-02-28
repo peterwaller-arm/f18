@@ -7,6 +7,7 @@
 // Intended to be as invisible as possible.
 
 #include "idioms.h"
+#include <ostream>
 #include <utility>
 
 namespace Fortran {
@@ -50,6 +51,11 @@ public:
 private:
   A *p_{nullptr};
 };
+
+template<typename A>
+std::ostream &operator<<(std::ostream &o, const Indirection<A> &x) {
+  return o << *x;
+}
 }  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PARSER_INDIRECTION_H_

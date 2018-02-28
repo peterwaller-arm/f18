@@ -5,7 +5,6 @@
 #include "preprocessor.h"
 #include "source.h"
 #include "token-sequence.h"
-#include <cstddef>
 #include <cstring>
 #include <sstream>
 #include <utility>
@@ -24,15 +23,13 @@ Prescanner::Prescanner(const Prescanner &that)
     fixedFormColumnLimit_{that.fixedFormColumnLimit_},
     enableOldDebugLines_{that.enableOldDebugLines_},
     enableBackslashEscapesInCharLiterals_{
-        that.enableBackslashEscapesInCharLiterals_},
-    compilerDirectiveBloomFilter_{that.compilerDirectiveBloomFilter_},
-    compilerDirectiveSentinels_{that.compilerDirectiveSentinels_} {}
+        that.enableBackslashEscapesInCharLiterals_} {}
 
 bool Prescanner::Prescan(ProvenanceRange range) {
   AllSources *allSources{cooked_->allSources()};
   ProvenanceRange around{allSources->GetContiguousRangeAround(range)};
   startProvenance_ = range.start();
-  std::size_t offset{0};
+  size_t offset{0};
   const SourceFile *source{
       allSources->GetSourceFile(startProvenance_, &offset)};
   CHECK(source != nullptr);
@@ -42,9 +39,7 @@ bool Prescanner::Prescan(ProvenanceRange range) {
   BeginSourceLine(lineStart_);
   TokenSequence tokens, preprocessed;
   while (lineStart_ < limit_) {
-    char sentinel[8];
-    if (CommentLinesAndPreprocessorDirectives(sentinel) &&
-        lineStart_ >= limit_) {
+    if (CommentLinesAndPreprocessorDirectives() && lineStart_ >= limit_) {
       break;
     }
     BeginSourceLineAndAdvance();
@@ -59,62 +54,46 @@ bool Prescanner::Prescan(ProvenanceRange range) {
     if (preprocessor_->MacroReplacement(tokens, *this, &preprocessed)) {
       preprocessed.PutNextTokenChar('\n', newlineProvenance);
       preprocessed.CloseToken();
-      const char *ppd{preprocessed.data()};
-      if (IsFixedFormCompilerDirectiveLine(ppd, sentinel) ||
-          IsFreeFormCompilerDirectiveLine(ppd, sentinel) ||
-          !(IsFixedFormCommentLine(ppd) ||
-            IsFreeFormComment(ppd))) {
+      if (IsFixedFormCommentLine(preprocessed.data()) ||
+          IsFreeFormComment(preprocessed.data())) {
+        ++newlineDebt_;
+      } else {
         preprocessed.pop_back();  // clip the newline added above
-        preprocessed.EmitLowerCase(cooked_);
+        preprocessed.EmitWithCaseConversion(cooked_);
       }
       preprocessed.clear();
     } else {
-      tokens.EmitLowerCase(cooked_);
+      tokens.EmitWithCaseConversion(cooked_);
     }
     tokens.clear();
-    cooked_->Put('\n', newlineProvenance);
+    ++newlineDebt_;
+    PayNewlineDebt(newlineProvenance);
   }
   return !anyFatalErrors_;
 }
 
-TokenSequence Prescanner::TokenizePreprocessorDirective() {
-  CHECK(lineStart_ < limit_ && !inPreprocessorDirective_);
+std::optional<TokenSequence> Prescanner::NextTokenizedLine() {
+  if (lineStart_ >= limit_) {
+    return {};
+  }
+  bool wasInPreprocessorDirective{inPreprocessorDirective_};
   auto saveAt = at_;
   inPreprocessorDirective_ = true;
   BeginSourceLineAndAdvance();
   TokenSequence tokens;
   while (NextToken(&tokens)) {
   }
-  inPreprocessorDirective_ = false;
+  inPreprocessorDirective_ = wasInPreprocessorDirective;
   at_ = saveAt;
   return {std::move(tokens)};
 }
 
-Message &Prescanner::Error(Message &&message) {
-  anyFatalErrors_ = true;
-  return messages_->Put(std::move(message));
+Message &Prescanner::Complain(MessageFixedText text) {
+  return messages_->Put({GetCurrentProvenance(), text});
 }
 
-Message &Prescanner::Error(MessageFixedText text, Provenance p) {
-  anyFatalErrors_ = true;
-  return messages_->Put({p, text});
-}
-
-Message &Prescanner::Error(MessageFormattedText &&text, Provenance p) {
-  anyFatalErrors_ = true;
-  return messages_->Put({p, std::move(text)});
-}
-
-Message &Prescanner::Complain(Message &&message) {
-  return messages_->Put(std::move(message));
-}
-
-Message &Prescanner::Complain(MessageFixedText text, Provenance p) {
-  return messages_->Put({p, text});
-}
-
-Message &Prescanner::Complain(MessageFormattedText &&text, Provenance p) {
-  return messages_->Put({p, std::move(text)});
+Message &Prescanner::Complain(MessageFormattedText &&text) {
+  return messages_->Put({GetCurrentProvenance(), std::move(text)});
 }
 
 void Prescanner::NextLine() {
@@ -147,14 +126,10 @@ void Prescanner::LabelField(TokenSequence *token) {
     token->CloseToken();
   }
   if (outCol < 7) {
-    if (outCol == 1) {
-      token->Put("      ", 6, sixSpaceProvenance_.start());
-    } else {
-      for (; outCol < 7; ++outCol) {
-        token->PutNextTokenChar(' ', spaceProvenance_);
-      }
-      token->CloseToken();
+    for (; outCol < 7; ++outCol) {
+      token->PutNextTokenChar(' ', spaceProvenance_);
     }
+    token->CloseToken();
   }
 }
 
@@ -175,6 +150,7 @@ void Prescanner::NextChar() {
     }
     while (*at_ == '\\' && at_ + 2 < limit_ && at_[1] == '\n') {
       BeginSourceLineAndAdvance();
+      ++newlineDebt_;
     }
   } else {
     if ((inFixedForm_ && column_ > fixedFormColumnLimit_ &&
@@ -200,12 +176,9 @@ void Prescanner::NextChar() {
 }
 
 void Prescanner::SkipSpaces() {
-  bool wasInCharLiteral{inCharLiteral_};
-  inCharLiteral_ = false;
   while (*at_ == ' ' || *at_ == '\t') {
     NextChar();
   }
-  inCharLiteral_ = wasInCharLiteral;
 }
 
 bool Prescanner::NextToken(TokenSequence *tokens) {
@@ -213,13 +186,11 @@ bool Prescanner::NextToken(TokenSequence *tokens) {
   if (inFixedForm_) {
     SkipSpaces();
   } else if (*at_ == ' ' || *at_ == '\t') {
-    // Compress white space into a single space character.
-    // Discard white space at the end of a line.
-    const auto theSpace = at_;
+    Provenance here{GetCurrentProvenance()};
     NextChar();
     SkipSpaces();
     if (*at_ != '\n') {
-      tokens->PutNextTokenChar(' ', GetProvenance(theSpace));
+      tokens->PutNextTokenChar(' ', here);
       tokens->CloseToken();
       return true;
     }
@@ -232,31 +203,35 @@ bool Prescanner::NextToken(TokenSequence *tokens) {
     QuotedCharacterLiteral(tokens);
     preventHollerith_ = false;
   } else if (IsDecimalDigit(*at_)) {
-    int n{0}, digits{0};
-    static constexpr int maxHollerith{256 /*lines*/ * (132 - 6 /*columns*/)};
+    int n{0};
+    static constexpr int maxHollerith = 256 * (132 - 6);
     do {
       if (n < maxHollerith) {
         n = 10 * n + DecimalDigitValue(*at_);
       }
       EmitCharAndAdvance(tokens, *at_);
-      ++digits;
-      if (inFixedForm_ && !inPreprocessorDirective_) {
+      if (inFixedForm_) {
         SkipSpaces();
       }
     } while (IsDecimalDigit(*at_));
     if ((*at_ == 'h' || *at_ == 'H') && n > 0 && n < maxHollerith &&
         !preventHollerith_) {
-      Hollerith(tokens, n);
+      EmitCharAndAdvance(tokens, 'h');
+      inCharLiteral_ = true;
+      while (n-- > 0) {
+        if (!PadOutCharacterLiteral(tokens)) {
+          if (*at_ == '\n') {
+            break;  // TODO error
+          }
+          EmitCharAndAdvance(tokens, *at_);
+        }
+      }
+      inCharLiteral_ = false;
     } else if (*at_ == '.') {
       while (IsDecimalDigit(EmitCharAndAdvance(tokens, *at_))) {
       }
       ExponentAndKind(tokens);
     } else if (ExponentAndKind(tokens)) {
-    } else if (digits == 1 && n == 0 && (*at_ == 'x' || *at_ == 'X') &&
-        inPreprocessorDirective_) {
-      do {
-        EmitCharAndAdvance(tokens, *at_);
-      } while (IsHexadecimalDigit(*at_));
     } else if (IsLetter(*at_)) {
       // Handles FORMAT(3I9HHOLLERITH) by skipping over the first I so that
       // we don't misrecognize I9HOLLERITH as an identifier in the next case.
@@ -310,7 +285,7 @@ bool Prescanner::NextToken(TokenSequence *tokens) {
 }
 
 bool Prescanner::ExponentAndKind(TokenSequence *tokens) {
-  char ed = ToLowerCaseLetter(*at_);
+  char ed = tolower(*at_);
   if (ed != 'e' && ed != 'd') {
     return false;
   }
@@ -328,99 +303,58 @@ bool Prescanner::ExponentAndKind(TokenSequence *tokens) {
   return true;
 }
 
+void Prescanner::EmitQuotedCharacter(TokenSequence *tokens, char ch) {
+  if (std::optional escape{BackslashEscapeChar(ch)}) {
+    if (ch != '\'' && ch != '"' &&
+        (ch != '\\' || !enableBackslashEscapesInCharLiterals_)) {
+      EmitInsertedChar(tokens, '\\');
+    }
+    EmitChar(tokens, *escape);
+  } else if (ch < ' ') {
+    // emit an octal escape sequence
+    EmitInsertedChar(tokens, '\\');
+    EmitInsertedChar(tokens, '0' + ((ch >> 6) & 3));
+    EmitInsertedChar(tokens, '0' + ((ch >> 3) & 7));
+    EmitInsertedChar(tokens, '0' + (ch & 7));
+  } else {
+    EmitChar(tokens, ch);
+  }
+}
+
 void Prescanner::QuotedCharacterLiteral(TokenSequence *tokens) {
-  const char *start{at_}, quote{*start};
+  char quote{*at_};
   inCharLiteral_ = true;
-  const auto emit = [&](char ch) { EmitChar(tokens, ch); };
-  const auto insert = [&](char ch) { EmitInsertedChar(tokens, ch); };
-  bool escape{false};
-  while (true) {
-    char ch{*at_};
-    escape = !escape && ch == '\\' && enableBackslashEscapesInCharLiterals_;
-    EmitQuotedChar(
-        ch, emit, insert, false, !enableBackslashEscapesInCharLiterals_);
+  do {
+    EmitQuotedCharacter(tokens, *at_);
+    NextChar();
     while (PadOutCharacterLiteral(tokens)) {
     }
-    if (*at_ == '\n') {
-      if (!inPreprocessorDirective_) {
-        Error("incomplete character literal"_en_US, GetProvenance(start));
-      }
-      break;
-    }
-    NextChar();
-    if (*at_ == quote && !escape) {
+    if (*at_ == quote) {
       // A doubled quote mark becomes a single instance of the quote character
-      // in the literal (later).  There can be spaces between the quotes in
-      // fixed form source.
+      // in the literal later.
       EmitCharAndAdvance(tokens, quote);
-      if (inFixedForm_ && !inPreprocessorDirective_) {
+      if (inFixedForm_) {
         SkipSpaces();
       }
       if (*at_ != quote) {
         break;
       }
     }
-  }
+  } while (*at_ != '\n');
   inCharLiteral_ = false;
 }
 
-void Prescanner::Hollerith(TokenSequence *tokens, int count) {
-  inCharLiteral_ = true;
-  EmitChar(tokens, 'H');
-  const char *start{at_};
-  while (count-- > 0) {
-    if (PadOutCharacterLiteral(tokens)) {
-    } else if (*at_ != '\n') {
-      NextChar();
-      EmitChar(tokens, *at_);
-      // Multi-byte character encodings should count as single characters.
-      int bytes{1};
-      if (encoding_ == Encoding::EUC_JP) {
-        if (std::optional<int> chBytes{EUC_JPCharacterBytes(at_)}) {
-          bytes = *chBytes;
-        }
-      } else if (encoding_ == Encoding::UTF8) {
-        if (std::optional<int> chBytes{UTF8CharacterBytes(at_)}) {
-          bytes = *chBytes;
-        }
-      }
-      while (bytes-- > 1) {
-        EmitChar(tokens, *++at_);
-      }
-    } else {
-      break;
-    }
-  }
-  if (*at_ == '\n') {
-    if (!inPreprocessorDirective_) {
-      Error("incomplete Hollerith literal"_en_US, GetProvenance(start));
-    }
-  } else {
-    NextChar();
-  }
-  inCharLiteral_ = false;
-}
-
-// In fixed form, source card images must be processed as if they were at
-// least 72 columns wide, at least in character literal contexts.
 bool Prescanner::PadOutCharacterLiteral(TokenSequence *tokens) {
-  while (inFixedForm_ && !tabInCurrentLine_ && at_[1] == '\n') {
-    if (column_ < fixedFormColumnLimit_) {
-      tokens->PutNextTokenChar(' ', spaceProvenance_);
-      ++column_;
-      return true;
-    }
-    if (!FixedFormContinuation() || tabInCurrentLine_) {
-      return false;
-    }
-    CHECK(column_ == 7);
-    --at_;  // point to column 6 of continuation line
-    column_ = 6;
+  if (inFixedForm_ && !tabInCurrentLine_ && *at_ == '\n' &&
+      column_ < fixedFormColumnLimit_) {
+    tokens->PutNextTokenChar(' ', spaceProvenance_);
+    ++column_;
+    return true;
   }
   return false;
 }
 
-bool Prescanner::IsFixedFormCommentLine(const char *start) const {
+bool Prescanner::IsFixedFormCommentLine(const char *start) {
   if (start >= limit_ || !inFixedForm_) {
     return false;
   }
@@ -454,7 +388,7 @@ bool Prescanner::IsFixedFormCommentLine(const char *start) const {
   return *p == '\n';
 }
 
-bool Prescanner::IsFreeFormComment(const char *p) const {
+bool Prescanner::IsFreeFormComment(const char *p) {
   if (p >= limit_ || inFixedForm_) {
     return false;
   }
@@ -473,7 +407,7 @@ bool Prescanner::IncludeLine(const char *p) {
     ++p;
   }
   for (char ch : "include"s) {
-    if (ToLowerCaseLetter(*p++) != ch) {
+    if (tolower(*p++) != ch) {
       return false;
     }
   }
@@ -495,13 +429,15 @@ bool Prescanner::IncludeLine(const char *p) {
     path += *p;
   }
   if (*p != quote) {
-    Error("malformed path name string"_en_US, GetProvenance(p));
+    messages_->Put({GetProvenance(p), "malformed path name string"_en_US});
+    anyFatalErrors_ = true;
     return true;
   }
   for (++p; *p == ' ' || *p == '\t'; ++p) {
   }
   if (*p != '\n' && *p != '!') {
-    Complain("excess characters after path name"_en_US, GetProvenance(p));
+    messages_->Put(
+        {GetProvenance(p), "excess characters after path name"_en_US});
   }
   std::stringstream error;
   Provenance provenance{GetProvenance(start)};
@@ -515,24 +451,21 @@ bool Prescanner::IncludeLine(const char *p) {
     allSources->PopSearchPathDirectory();
   }
   if (included == nullptr) {
-    Error(MessageFormattedText("INCLUDE: %s"_en_US, error.str().data()),
-        provenance);
+    messages_->Put({provenance,
+        MessageFormattedText("INCLUDE: %s"_en_US, error.str().data())});
+    anyFatalErrors_ = true;
     return true;
   }
-  if (included->bytes() == 0) {
-    return true;
-  }
-  ProvenanceRange includeLineRange{
-      provenance, static_cast<std::size_t>(p - start)};
+  ProvenanceRange includeLineRange{provenance, static_cast<size_t>(p - start)};
   ProvenanceRange fileRange{
       allSources->AddIncludedFile(*included, includeLineRange)};
   anyFatalErrors_ |= !Prescanner{*this}.Prescan(fileRange);
   return true;
 }
 
-bool Prescanner::IsPreprocessorDirectiveLine(const char *start) const {
+bool Prescanner::IsPreprocessorDirectiveLine(const char *start) {
   const char *p{start};
-  if (p >= limit_) {
+  if (p >= limit_ || inPreprocessorDirective_) {
     return false;
   }
   for (; *p == ' '; ++p) {
@@ -545,45 +478,34 @@ bool Prescanner::IsPreprocessorDirectiveLine(const char *start) const {
   return *p == '#';
 }
 
-bool Prescanner::IsNextLinePreprocessorDirective() const {
-  return IsPreprocessorDirectiveLine(lineStart_);
-}
-
 bool Prescanner::CommentLines() {
   bool any{false};
-  char sentinel[8];
   while (lineStart_ < limit_) {
-    if (IsFixedFormCompilerDirectiveLine(lineStart_, sentinel) ||
-        IsFreeFormCompilerDirectiveLine(lineStart_, sentinel) ||
-        !(IsFixedFormCommentLine(lineStart_) ||
-          IsFreeFormComment(lineStart_))) {
+    if (IsFixedFormCommentLine(lineStart_) || IsFreeFormComment(lineStart_)) {
+      NextLine();
+      ++newlineDebt_;
+      any = true;
+    } else {
       break;
     }
-    NextLine();
-    any = true;
   }
   return any;
 }
 
-bool Prescanner::CommentLinesAndPreprocessorDirectives(char *sentinel) {
+bool Prescanner::CommentLinesAndPreprocessorDirectives() {
   bool any{false};
-  *sentinel = '\0';
   while (lineStart_ < limit_) {
-    if (IsFixedFormCompilerDirectiveLine(lineStart_, sentinel) ||
-        IsFreeFormCompilerDirectiveLine(lineStart_, sentinel)) {
-      break;
-    }
     if (IsFixedFormCommentLine(lineStart_) || IsFreeFormComment(lineStart_) ||
         IncludeLine(lineStart_)) {
       NextLine();
     } else if (IsPreprocessorDirectiveLine(lineStart_)) {
-      if (std::optional<TokenSequence> tokens{
-              TokenizePreprocessorDirective()}) {
-        preprocessor_->Directive(*tokens, this);
+      if (std::optional<TokenSequence> tokens{NextTokenizedLine()}) {
+        anyFatalErrors_ |= !preprocessor_->Directive(*tokens, this);
       }
     } else {
       break;
     }
+    ++newlineDebt_;
     any = true;
   }
   return any;
@@ -596,7 +518,7 @@ const char *Prescanner::FixedFormContinuationLine() {
   }
   tabInCurrentLine_ = false;
   if (*p == '&') {
-    return p + 1;  // extension; TODO: emit warning with -Mstandard
+    return p + 1;  // extension
   }
   if (*p == '\t' && p[1] >= '1' && p[1] <= '9') {
     tabInCurrentLine_ = true;
@@ -626,6 +548,7 @@ bool Prescanner::FixedFormContinuation() {
   }
   BeginSourceLine(cont);
   column_ = 7;
+  ++newlineDebt_;
   NextLine();
   return true;
 }
@@ -669,89 +592,15 @@ bool Prescanner::FreeFormContinuation() {
   at_ = p;
   column_ = column;
   tabInCurrentLine_ = false;
+  ++newlineDebt_;
   NextLine();
   return true;
 }
 
-bool Prescanner::IsFixedFormCompilerDirectiveLine(const char *start,
-                                                  char *sentinel) const {
-  *sentinel = '\0';
-  if (start >= limit_ || !inFixedForm_) {
-    return false;
+void Prescanner::PayNewlineDebt(Provenance p) {
+  for (; newlineDebt_ > 0; --newlineDebt_) {
+    cooked_->Put('\n', p);
   }
-  const char *p{start};
-  char c1{*p};
-  if (!(c1 == '*' || c1 == 'C' || c1 == 'c' || c1 == '!')) {
-    return false;
-  }
-  char *sp{sentinel};
-  ++p;
-  for (int col{2}; col < 6; ++col) {
-    char ch{*++p};
-    if (ch == '\n' || ch == '\t') {
-      return false;
-    }
-    if (ch != ' ') {
-      *sp++ = ToLowerCaseLetter(ch);
-    }
-  }
-  if (*p != ' ' && *p != '0') {
-    return false;  // continuation card for directive
-  }
-  *sp = '\0';
-  return IsCompilerDirectiveSentinel(sentinel);
-}
-
-bool Prescanner::IsFreeFormCompilerDirectiveLine(const char *start,
-                                                 char *sentinel) const {
-  *sentinel = '\0';
-  if (start >= limit_ || inFixedForm_) {
-    return false;
-  }
-  const char *p{start};
-  while (*p == ' ' || *p == '\t') {
-    ++p;
-  }
-  if (*p++ != '!') {
-    return false;
-  }
-  for (int j{0}; j < 5; ++p, ++j) {
-    if (*p == '\n' || *p == '&') {
-      break;
-    }
-    if (*p == ' ' || *p == '\t') {
-      if (j == 0) {
-        break;
-      }
-      sentinel[j] = '\0';
-      return IsCompilerDirectiveSentinel(sentinel);
-    }
-    sentinel[j] = ToLowerCaseLetter(*p);
-  }
-  return false;
-}
-
-Prescanner &Prescanner::AddCompilerDirectiveSentinel(const std::string &dir) {
-  std::uint64_t packed{0};
-  for (char ch : dir) {
-    packed = (packed << 8) | (ToLowerCaseLetter(ch) & 0xff);
-  }
-  compilerDirectiveBloomFilter_.set(packed % prime1);
-  compilerDirectiveBloomFilter_.set(packed % prime2);
-  compilerDirectiveSentinels_.insert(dir);
-  return *this;
-}
-
-bool Prescanner::IsCompilerDirectiveSentinel(const char *s) const {
-  std::uint64_t packed{0};
-  std::size_t n{0};
-  for (; s[n] != '\0'; ++n) {
-    packed = (packed << 8) | (s[n] & 0xff);
-  }
-  return n > 0 && compilerDirectiveBloomFilter_.test(packed % prime1) &&
-      compilerDirectiveBloomFilter_.test(packed % prime2) &&
-      compilerDirectiveSentinels_.find(std::string(s, n)) !=
-      compilerDirectiveSentinels_.end();
 }
 }  // namespace parser
 }  // namespace Fortran

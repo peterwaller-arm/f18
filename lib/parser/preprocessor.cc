@@ -5,11 +5,9 @@
 #include "prescan.h"
 #include <algorithm>
 #include <cinttypes>
-#include <cstddef>
 #include <ctime>
 #include <map>
 #include <memory>
-#include <optional>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -18,11 +16,11 @@ namespace Fortran {
 namespace parser {
 
 Definition::Definition(
-    const TokenSequence &repl, std::size_t firstToken, std::size_t tokens)
+    const TokenSequence &repl, size_t firstToken, size_t tokens)
   : replacement_{Tokenize({}, repl, firstToken, tokens)} {}
 
 Definition::Definition(const std::vector<std::string> &argNames,
-    const TokenSequence &repl, std::size_t firstToken, std::size_t tokens,
+    const TokenSequence &repl, size_t firstToken, size_t tokens,
     bool isVariadic)
   : isFunctionLike_{true},
     argumentCount_(argNames.size()), isVariadic_{isVariadic},
@@ -39,12 +37,12 @@ bool Definition::set_isDisabled(bool disable) {
   return was;
 }
 
-static bool IsLegalIdentifierStart(const CharBlock &cpl) {
+static bool IsLegalIdentifierStart(const ContiguousChars &cpl) {
   return cpl.size() > 0 && IsLegalIdentifierStart(cpl[0]);
 }
 
 TokenSequence Definition::Tokenize(const std::vector<std::string> &argNames,
-    const TokenSequence &token, std::size_t firstToken, std::size_t tokens) {
+    const TokenSequence &token, size_t firstToken, size_t tokens) {
   std::map<std::string, std::string> args;
   char argIndex{'A'};
   for (const std::string &arg : argNames) {
@@ -52,8 +50,8 @@ TokenSequence Definition::Tokenize(const std::vector<std::string> &argNames,
     args[arg] = "~"s + argIndex++;
   }
   TokenSequence result;
-  for (std::size_t j{0}; j < tokens; ++j) {
-    CharBlock tok{token[firstToken + j]};
+  for (size_t j{0}; j < tokens; ++j) {
+    ContiguousChars tok{token[firstToken + j]};
     if (IsLegalIdentifierStart(tok)) {
       auto it = args.find(tok.ToString());
       if (it != args.end()) {
@@ -66,8 +64,8 @@ TokenSequence Definition::Tokenize(const std::vector<std::string> &argNames,
   return result;
 }
 
-static std::size_t AfterLastNonBlank(const TokenSequence &tokens) {
-  for (std::size_t j{tokens.size()}; j > 0; --j) {
+static size_t AfterLastNonBlank(const TokenSequence &tokens) {
+  for (size_t j{tokens.size()}; j > 0; --j) {
     if (!tokens[j - 1].IsBlank()) {
       return j;
     }
@@ -80,10 +78,10 @@ static TokenSequence Stringify(
   TokenSequence result;
   Provenance quoteProvenance{allSources->CompilerInsertionProvenance('"')};
   result.PutNextTokenChar('"', quoteProvenance);
-  for (std::size_t j{0}; j < tokens.size(); ++j) {
-    const CharBlock &token{tokens[j]};
-    std::size_t bytes{token.size()};
-    for (std::size_t k{0}; k < bytes; ++k) {
+  for (size_t j{0}; j < tokens.size(); ++j) {
+    const ContiguousChars &token{tokens[j]};
+    size_t bytes{token.size()};
+    for (size_t k{0}; k < bytes; ++k) {
       char ch{token[k]};
       Provenance from{tokens.GetTokenProvenance(j, k)};
       if (ch == '"' || ch == '\\') {
@@ -103,10 +101,10 @@ TokenSequence Definition::Apply(
   bool pasting{false};
   bool skipping{false};
   int parenthesesNesting{0};
-  std::size_t tokens{replacement_.size()};
-  for (std::size_t j{0}; j < tokens; ++j) {
-    const CharBlock &token{replacement_[j]};
-    std::size_t bytes{token.size()};
+  size_t tokens{replacement_.size()};
+  for (size_t j{0}; j < tokens; ++j) {
+    const ContiguousChars &token{replacement_[j]};
+    size_t bytes{token.size()};
     if (skipping) {
       if (bytes == 1) {
         if (token[0] == '(') {
@@ -118,11 +116,11 @@ TokenSequence Definition::Apply(
       continue;
     }
     if (bytes == 2 && token[0] == '~') {
-      std::size_t index = token[1] - 'A';
+      size_t index = token[1] - 'A';
       if (index >= args.size()) {
         continue;
       }
-      std::size_t afterLastNonBlank{AfterLastNonBlank(result)};
+      size_t afterLastNonBlank{AfterLastNonBlank(result)};
       if (afterLastNonBlank > 0 &&
           result[afterLastNonBlank - 1].ToString() == "#") {
         // stringifying
@@ -131,8 +129,8 @@ TokenSequence Definition::Apply(
         }
         result.Put(Stringify(args[index], allSources));
       } else {
-        std::size_t argTokens{args[index].size()};
-        for (std::size_t k{0}; k < argTokens; ++k) {
+        size_t argTokens{args[index].size()};
+        for (size_t k{0}; k < argTokens; ++k) {
           if (!pasting || !args[index][k].IsBlank()) {
             result.Put(args[index], k);
             pasting = false;
@@ -152,9 +150,9 @@ TokenSequence Definition::Apply(
     } else if (pasting && token.IsBlank()) {
       // Delete whitespace immediately following ## in the body.
     } else if (bytes == 11 && isVariadic_ &&
-        token.ToString() == "__VA_ARGs__") {
+        token.ToString() == "__VA_ARGS__") {
       Provenance commaProvenance{allSources->CompilerInsertionProvenance(',')};
-      for (std::size_t k{argumentCount_}; k < args.size(); ++k) {
+      for (size_t k{argumentCount_}; k < args.size(); ++k) {
         if (k > argumentCount_) {
           result.Put(","s, commaProvenance);
         }
@@ -203,19 +201,13 @@ Preprocessor::Preprocessor(AllSources *allSources) : allSources_{allSources} {
       SaveTokenAsName("__LINE__"s), Definition{"__LINE__"s, allSources});
 }
 
-void Preprocessor::Define(std::string macro, std::string value) {
-  definitions_.emplace(SaveTokenAsName(macro), Definition{value, allSources_});
-}
-
-void Preprocessor::Undefine(std::string macro) { definitions_.erase(macro); }
-
 bool Preprocessor::MacroReplacement(const TokenSequence &input,
     const Prescanner &prescanner, TokenSequence *result) {
   // Do quick scan for any use of a defined name.
-  std::size_t tokens{input.size()};
-  std::size_t j;
+  size_t tokens{input.size()};
+  size_t j;
   for (j = 0; j < tokens; ++j) {
-    std::size_t bytes{input[j].size()};
+    size_t bytes{input[j].size()};
     if (bytes > 0 && IsLegalIdentifierStart(input[j][0]) &&
         IsNameDefined(input[j])) {
       break;
@@ -226,7 +218,7 @@ bool Preprocessor::MacroReplacement(const TokenSequence &input,
   }
   result->Put(input, 0, j);
   for (; j < tokens; ++j) {
-    const CharBlock &token{input[j]};
+    const ContiguousChars &token{input[j]};
     if (token.IsBlank() || !IsLegalIdentifierStart(token[0])) {
       result->Put(input, j);
       continue;
@@ -275,10 +267,10 @@ bool Preprocessor::MacroReplacement(const TokenSequence &input,
     }
     // Possible function-like macro call.  Skip spaces and newlines to see
     // whether '(' is next.
-    std::size_t k{j};
+    size_t k{j};
     bool leftParen{false};
     while (++k < tokens) {
-      const CharBlock &lookAhead{input[k]};
+      const ContiguousChars &lookAhead{input[k]};
       if (!lookAhead.IsBlank() && lookAhead[0] != '\n') {
         leftParen = lookAhead[0] == '(' && lookAhead.size() == 1;
         break;
@@ -288,7 +280,7 @@ bool Preprocessor::MacroReplacement(const TokenSequence &input,
       result->Put(input, j);
       continue;
     }
-    std::vector<std::size_t> argStart{++k};
+    std::vector<size_t> argStart{++k};
     for (int nesting{0}; k < tokens; ++k) {
       if (input[k].size() == 1) {
         char ch{input[k][0]};
@@ -310,10 +302,9 @@ bool Preprocessor::MacroReplacement(const TokenSequence &input,
       continue;
     }
     std::vector<TokenSequence> args;
-    for (std::size_t n{0}; n < argStart.size(); ++n) {
-      std::size_t at{argStart[n]};
-      std::size_t count{
-          (n + 1 == argStart.size() ? k : argStart[n + 1] - 1) - at};
+    for (size_t n{0}; n < argStart.size(); ++n) {
+      size_t at{argStart[n]};
+      size_t count{(n + 1 == argStart.size() ? k : argStart[n + 1] - 1) - at};
       args.emplace_back(TokenSequence(input, at, count));
     }
     def.set_isDisabled(true);
@@ -338,8 +329,8 @@ TokenSequence Preprocessor::ReplaceMacros(
   return MacroReplacement(tokens, prescanner, &repl) ? repl : tokens;
 }
 
-static std::size_t SkipBlanks(
-    const TokenSequence &tokens, std::size_t at, std::size_t lastToken) {
+static size_t SkipBlanks(
+    const TokenSequence &tokens, size_t at, size_t lastToken) {
   for (; at < lastToken; ++at) {
     if (!tokens[at].IsBlank()) {
       break;
@@ -349,46 +340,62 @@ static std::size_t SkipBlanks(
 }
 
 static TokenSequence StripBlanks(
-    const TokenSequence &token, std::size_t first, std::size_t tokens) {
+    const TokenSequence &token, size_t first, size_t tokens) {
   TokenSequence noBlanks;
-  for (std::size_t j{SkipBlanks(token, first, tokens)}; j < tokens;
+  for (size_t j{SkipBlanks(token, first, tokens)}; j < tokens;
        j = SkipBlanks(token, j + 1, tokens)) {
     noBlanks.Put(token, j);
   }
   return noBlanks;
 }
 
-void Preprocessor::Directive(const TokenSequence &dir, Prescanner *prescanner) {
-  std::size_t tokens{dir.size()};
-  std::size_t j{SkipBlanks(dir, 0, tokens)};
+static std::string GetDirectiveName(const TokenSequence &line, size_t *rest) {
+  size_t tokens{line.size()};
+  size_t j{SkipBlanks(line, 0, tokens)};
+  if (j == tokens || line[j].ToString() != "#") {
+    *rest = tokens;
+    return {};
+  }
+  j = SkipBlanks(line, j + 1, tokens);
   if (j == tokens) {
-    return;
+    *rest = tokens;
+    return {};
+  }
+  *rest = SkipBlanks(line, j + 1, tokens);
+  return ToLowerCaseLetters(line[j].ToString());
+}
+
+bool Preprocessor::Directive(const TokenSequence &dir, Prescanner *prescanner) {
+  size_t tokens{dir.size()};
+  size_t j{SkipBlanks(dir, 0, tokens)};
+  if (j == tokens) {
+    return true;
   }
   if (dir[j].ToString() != "#") {
-    prescanner->Error("missing '#'"_en_US, dir.GetTokenProvenance(j));
-    return;
+    prescanner->Complain("missing '#'"_en_US);
+    return false;
   }
   j = SkipBlanks(dir, j + 1, tokens);
   if (j == tokens) {
-    return;
+    return true;
   }
   if (IsDecimalDigit(dir[j][0]) || dir[j][0] == '"') {
-    return;  // TODO: treat as #line
+    return true;  // TODO: treat as #line
   }
-  std::size_t dirOffset{j};
-  std::string dirName{ToLowerCaseLetters(dir[dirOffset].ToString())};
+  std::string dirName{ToLowerCaseLetters(dir[j].ToString())};
   j = SkipBlanks(dir, j + 1, tokens);
-  CharBlock nameToken;
+  ContiguousChars nameToken;
   if (j < tokens && IsLegalIdentifierStart(dir[j][0])) {
     nameToken = dir[j];
   }
   if (dirName == "line") {
     // TODO: implement #line
-  } else if (dirName == "define") {
+    return true;
+  }
+  if (dirName == "define") {
     if (nameToken.empty()) {
-      prescanner->Error("#define: missing or invalid name"_en_US,
-          dir.GetTokenProvenance(j < tokens ? j : tokens - 1));
-      return;
+      prescanner->Complain("#define: missing or invalid name"_en_US);
+      return false;
     }
     nameToken = SaveTokenAsName(nameToken);
     definitions_.erase(nameToken);
@@ -403,40 +410,36 @@ void Preprocessor::Directive(const TokenSequence &dir, Prescanner *prescanner) {
             isVariadic = true;
           } else {
             if (an.empty() || !IsLegalIdentifierStart(an[0])) {
-              prescanner->Error(
-                  "#define: missing or invalid argument name"_en_US,
-                  dir.GetTokenProvenance(j));
-              return;
+              prescanner->Complain(
+                  "#define: missing or invalid argument name"_en_US);
+              return false;
             }
             argName.push_back(an);
           }
           j = SkipBlanks(dir, j + 1, tokens);
           if (j == tokens) {
-            prescanner->Error("#define: malformed argument list"_en_US,
-                dir.GetTokenProvenance(tokens - 1));
-            return;
+            prescanner->Complain("#define: malformed argument list"_en_US);
+            return false;
           }
           std::string punc{dir[j].ToString()};
           if (punc == ")") {
             break;
           }
-          if (isVariadic || punc != ",") {
-            prescanner->Error("#define: malformed argument list"_en_US,
-                dir.GetTokenProvenance(j));
-            return;
+          if (punc != ",") {
+            prescanner->Complain("#define: malformed argument list"_en_US);
+            return false;
           }
           j = SkipBlanks(dir, j + 1, tokens);
-          if (j == tokens) {
-            prescanner->Error("#define: malformed argument list"_en_US,
-                dir.GetTokenProvenance(tokens - 1));
-            return;
+          if (j == tokens || isVariadic) {
+            prescanner->Complain("#define: malformed argument list"_en_US);
+            return false;
           }
         }
         if (std::set<std::string>(argName.begin(), argName.end()).size() !=
             argName.size()) {
-          prescanner->Error("#define: argument names are not distinct"_en_US,
-              dir.GetTokenProvenance(dirOffset));
-          return;
+          prescanner->Complain(
+              "#define: argument names are not distinct"_en_US);
+          return false;
         }
       }
       j = SkipBlanks(dir, j + 1, tokens);
@@ -447,106 +450,111 @@ void Preprocessor::Directive(const TokenSequence &dir, Prescanner *prescanner) {
       definitions_.emplace(
           std::make_pair(nameToken, Definition{dir, j, tokens - j}));
     }
-  } else if (dirName == "undef") {
+    return true;
+  }
+  if (dirName == "undef") {
     if (nameToken.empty()) {
-      prescanner->Error("# missing or invalid name"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else {
-      j = SkipBlanks(dir, j + 1, tokens);
-      if (j != tokens) {
-        prescanner->Error("#undef: excess tokens at end of directive"_en_US,
-            dir.GetTokenProvenance(j));
-      } else {
-        definitions_.erase(nameToken);
-      }
-    }
-  } else if (dirName == "ifdef" || dirName == "ifndef") {
-    if (nameToken.empty()) {
-      prescanner->Error(
-          MessageFormattedText("#%s: missing name"_en_US, dirName.data()),
-          dir.GetTokenProvenance(tokens - 1));
-      return;
+      prescanner->Complain("# missing or invalid name"_en_US);
+      return false;
     }
     j = SkipBlanks(dir, j + 1, tokens);
     if (j != tokens) {
-      prescanner->Error(
-          MessageFormattedText(
-              "#%s: excess tokens at end of directive"_en_US, dirName.data()),
-          dir.GetTokenProvenance(j));
-    } else if (IsNameDefined(nameToken) == (dirName == "ifdef")) {
-      ifStack_.push(CanDeadElseAppear::Yes);
-    } else {
-      SkipDisabledConditionalCode(dirName, IsElseActive::Yes, prescanner,
-          dir.GetTokenProvenance(dirOffset));
+      prescanner->Complain("#undef: excess tokens at end of directive"_en_US);
+      return false;
     }
-  } else if (dirName == "if") {
+    definitions_.erase(nameToken);
+    return true;
+  }
+  if (dirName == "ifdef" || dirName == "ifndef") {
+    if (nameToken.empty()) {
+      prescanner->Complain(
+          MessageFormattedText("#%s: missing name"_en_US, dirName.data()));
+      return false;
+    }
+    j = SkipBlanks(dir, j + 1, tokens);
+    if (j != tokens) {
+      prescanner->Complain(MessageFormattedText(
+          "#%s: excess tokens at end of directive"_en_US, dirName.data()));
+      return false;
+    }
+    if (IsNameDefined(nameToken) == (dirName == "ifdef")) {
+      ifStack_.push(CanDeadElseAppear::Yes);
+      return true;
+    }
+    return SkipDisabledConditionalCode(dirName, IsElseActive::Yes, prescanner);
+  }
+  if (dirName == "if") {
     if (IsIfPredicateTrue(dir, j, tokens - j, prescanner)) {
       ifStack_.push(CanDeadElseAppear::Yes);
-    } else {
-      SkipDisabledConditionalCode(dirName, IsElseActive::Yes, prescanner,
-          dir.GetTokenProvenance(dirOffset));
+      return true;
     }
-  } else if (dirName == "else") {
+    return SkipDisabledConditionalCode(dirName, IsElseActive::Yes, prescanner);
+  }
+  if (dirName == "else") {
     if (j != tokens) {
-      prescanner->Error("#else: excess tokens at end of directive"_en_US,
-          dir.GetTokenProvenance(j));
-    } else if (ifStack_.empty()) {
-      prescanner->Error(
-          "#else: not nested within #if, #ifdef, or #ifndef"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else if (ifStack_.top() != CanDeadElseAppear::Yes) {
-      prescanner->Error(
-          "#else: already appeared within this #if, #ifdef, or #ifndef"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else {
-      ifStack_.pop();
-      SkipDisabledConditionalCode("else", IsElseActive::No, prescanner,
-          dir.GetTokenProvenance(dirOffset));
+      prescanner->Complain("#else: excess tokens at end of directive"_en_US);
+      return false;
     }
-  } else if (dirName == "elif") {
     if (ifStack_.empty()) {
-      prescanner->Error(
-          "#elif: not nested within #if, #ifdef, or #ifndef"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else if (ifStack_.top() != CanDeadElseAppear::Yes) {
-      prescanner->Error("#elif: #else previously appeared within this "
-                        "#if, #ifdef, or #ifndef"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else {
-      ifStack_.pop();
-      SkipDisabledConditionalCode("elif", IsElseActive::No, prescanner,
-          dir.GetTokenProvenance(dirOffset));
+      prescanner->Complain(
+          "#else: not nested within #if, #ifdef, or #ifndef"_en_US);
+      return false;
     }
-  } else if (dirName == "endif") {
+    if (ifStack_.top() != CanDeadElseAppear::Yes) {
+      prescanner->Complain(
+          "#else: already appeared within this #if, #ifdef, or #ifndef"_en_US);
+      return false;
+    }
+    ifStack_.pop();
+    return SkipDisabledConditionalCode("else", IsElseActive::No, prescanner);
+  }
+  if (dirName == "elif") {
+    if (ifStack_.empty()) {
+      prescanner->Complain(
+          "#elif: not nested within #if, #ifdef, or #ifndef"_en_US);
+      return false;
+    }
+    if (ifStack_.top() != CanDeadElseAppear::Yes) {
+      prescanner->Complain("#elif: #else previously appeared within this "
+                           "#if, #ifdef, or #ifndef"_en_US);
+      return false;
+    }
+    ifStack_.pop();
+    return SkipDisabledConditionalCode("elif", IsElseActive::No, prescanner);
+  }
+  if (dirName == "endif") {
     if (j != tokens) {
-      prescanner->Error("#endif: excess tokens at end of directive"_en_US,
-          dir.GetTokenProvenance(j));
-    } else if (ifStack_.empty()) {
-      prescanner->Error("#endif: no #if, #ifdef, or #ifndef"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-    } else {
-      ifStack_.pop();
+      prescanner->Complain("#endif: excess tokens at end of directive"_en_US);
+      return false;
     }
-  } else if (dirName == "error") {
-    prescanner->Error(
-        MessageFormattedText("#error: %s"_en_US, dir.ToString().data()),
-        dir.GetTokenProvenance(dirOffset));
-  } else if (dirName == "warning") {
+    if (ifStack_.empty()) {
+      prescanner->Complain("#endif: no #if, #ifdef, or #ifndef"_en_US);
+      return false;
+    }
+    ifStack_.pop();
+    return true;
+  }
+  if (dirName == "error") {
     prescanner->Complain(
-        MessageFormattedText("#warning: %s"_en_US, dir.ToString().data()),
-        dir.GetTokenProvenance(dirOffset));
-  } else if (dirName == "include") {
+        MessageFormattedText("#error: %s"_en_US, dir.ToString().data()));
+    return false;
+  }
+  if (dirName == "warning") {
+    prescanner->Complain(
+        MessageFormattedText("#warning: %s"_en_US, dir.ToString().data()));
+    return true;
+  }
+  if (dirName == "include") {
     if (j == tokens) {
-      prescanner->Error("#include: missing name of file to include"_en_US,
-          dir.GetTokenProvenance(tokens - 1));
-      return;
+      prescanner->Complain("#include: missing name of file to include"_en_US);
+      return false;
     }
     std::string include;
     if (dir[j].ToString() == "<") {
       if (dir[tokens - 1].ToString() != ">") {
-        prescanner->Error("#include: expected '>' at end of directive"_en_US,
-            dir.GetTokenProvenance(tokens - 1));
-        return;
+        prescanner->Complain(
+            "#include: expected '>' at end of directive"_en_US);
+        return false;
       }
       TokenSequence braced{dir, j + 1, tokens - j - 2};
       include = ReplaceMacros(braced, *prescanner).ToString();
@@ -555,97 +563,65 @@ void Preprocessor::Directive(const TokenSequence &dir, Prescanner *prescanner) {
         include.substr(include.size() - 1, 1) == "\"") {
       include = include.substr(1, include.size() - 2);
     } else {
-      prescanner->Error("#include: expected name of file to include"_en_US,
-          dir.GetTokenProvenance(j < tokens ? j : tokens - 1));
-      return;
+      prescanner->Complain("#include: expected name of file to include"_en_US);
+      return false;
     }
     if (include.empty()) {
-      prescanner->Error("#include: empty include file name"_en_US,
-          dir.GetTokenProvenance(dirOffset));
-      return;
+      prescanner->Complain("#include: empty include file name"_en_US);
+      return false;
     }
     std::stringstream error;
     const SourceFile *included{allSources_->Open(include, &error)};
     if (included == nullptr) {
-      prescanner->Error(
-          MessageFormattedText("#include: %s"_en_US, error.str().data()),
-          dir.GetTokenProvenance(dirOffset));
-      return;
-    }
-    if (included->bytes() == 0) {
-      return;
+      prescanner->Complain(
+          MessageFormattedText("#include: %s"_en_US, error.str().data()));
+      return false;
     }
     ProvenanceRange fileRange{
         allSources_->AddIncludedFile(*included, dir.GetProvenanceRange())};
-    if (!Prescanner{*prescanner}.Prescan(fileRange)) {
-      prescanner->set_anyFatalErrors();
-    }
-  } else {
-    prescanner->Error(
-        MessageFormattedText(
-            "#%s: unknown or unimplemented directive"_en_US, dirName.data()),
-        dir.GetTokenProvenance(dirOffset));
+    return Prescanner{*prescanner}.Prescan(fileRange);
   }
+  prescanner->Complain(MessageFormattedText(
+      "#%s: unknown or unimplemented directive"_en_US, dirName.data()));
+  return false;
 }
 
-CharBlock Preprocessor::SaveTokenAsName(const CharBlock &t) {
+ContiguousChars Preprocessor::SaveTokenAsName(const ContiguousChars &t) {
   names_.push_back(t.ToString());
   return {names_.back().data(), names_.back().size()};
 }
 
-bool Preprocessor::IsNameDefined(const CharBlock &token) {
+bool Preprocessor::IsNameDefined(const ContiguousChars &token) {
   return definitions_.find(token) != definitions_.end();
 }
 
-static std::string GetDirectiveName(
-    const TokenSequence &line, std::size_t *rest) {
-  std::size_t tokens{line.size()};
-  std::size_t j{SkipBlanks(line, 0, tokens)};
-  if (j == tokens || line[j].ToString() != "#") {
-    *rest = tokens;
-    return "";
-  }
-  j = SkipBlanks(line, j + 1, tokens);
-  if (j == tokens) {
-    *rest = tokens;
-    return "";
-  }
-  *rest = SkipBlanks(line, j + 1, tokens);
-  return ToLowerCaseLetters(line[j].ToString());
-}
-
-void Preprocessor::SkipDisabledConditionalCode(const std::string &dirName,
-    IsElseActive isElseActive, Prescanner *prescanner, Provenance provenance) {
+bool Preprocessor::SkipDisabledConditionalCode(const std::string &dirName,
+    IsElseActive isElseActive, Prescanner *prescanner) {
   int nesting{0};
-  while (!prescanner->IsAtEnd()) {
-    if (!prescanner->IsNextLinePreprocessorDirective()) {
-      prescanner->NextLine();
-      continue;
-    }
-    TokenSequence line{prescanner->TokenizePreprocessorDirective()};
-    std::size_t rest{0};
-    std::string dn{GetDirectiveName(line, &rest)};
+  while (std::optional<TokenSequence> line{prescanner->NextTokenizedLine()}) {
+    size_t rest{0};
+    std::string dn{GetDirectiveName(*line, &rest)};
     if (dn == "ifdef" || dn == "ifndef" || dn == "if") {
       ++nesting;
     } else if (dn == "endif") {
       if (nesting-- == 0) {
-        return;
+        return true;
       }
     } else if (isElseActive == IsElseActive::Yes && nesting == 0) {
       if (dn == "else") {
         ifStack_.push(CanDeadElseAppear::No);
-        return;
+        return true;
       }
       if (dn == "elif" &&
-          IsIfPredicateTrue(line, rest, line.size() - rest, prescanner)) {
+          IsIfPredicateTrue(*line, rest, line->size() - rest, prescanner)) {
         ifStack_.push(CanDeadElseAppear::Yes);
-        return;
+        return true;
       }
     }
   }
-  prescanner->Error(
-      MessageFormattedText("#%s: missing #endif"_en_US, dirName.data()),
-      provenance);
+  prescanner->Complain(
+      MessageFormattedText("#%s: missing #endif"_en_US, dirName.data()));
+  return false;
 }
 
 // Precedence level codes used here to accommodate mixed Fortran and C:
@@ -666,8 +642,7 @@ void Preprocessor::SkipDisabledConditionalCode(const std::string &dirName,
 //  1: ? :
 //  0: ,
 static std::int64_t ExpressionValue(const TokenSequence &token,
-    int minimumPrecedence, std::size_t *atToken,
-    std::optional<Message> *error) {
+    int minimumPrecedence, size_t *atToken, MessageFixedText *error) {
   enum Operator {
     PARENS,
     CONST,
@@ -743,29 +718,24 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
     opNameMap[","] = COMMA;
   }
 
-  std::size_t tokens{token.size()};
+  size_t tokens{token.size()};
   if (*atToken >= tokens) {
-    *error = Message{
-        token.GetTokenProvenance(tokens - 1), "incomplete expression"_en_US};
+    *error = "incomplete expression"_en_US;
     return 0;
   }
+  std::string t{token[*atToken].ToString()};
+  enum Operator op;
 
   // Parse and evaluate a primary or a unary operator and its operand.
-  std::size_t opAt{*atToken};
-  std::string t{token[opAt].ToString()};
-  enum Operator op;
   std::int64_t left{0};
   if (t == "(") {
     op = PARENS;
   } else if (IsDecimalDigit(t[0])) {
     op = CONST;
-    std::size_t consumed{0};
-    left = std::stoll(t, &consumed, 0 /*base to be detected*/);
+    size_t consumed{0};
+    left = std::stoll(t, &consumed);
     if (consumed < t.size()) {
-      *error = Message{token.GetTokenProvenance(opAt),
-          MessageFormattedText(
-              "uninterpretable numeric constant '%s'"_en_US, t.data())};
-      return 0;
+      *error = "uninterpretable numeric constant '"_en_US;
     }
   } else if (IsLegalIdentifierStart(t[0])) {
     // undefined macro name -> zero
@@ -785,30 +755,22 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
     if (it != opNameMap.end()) {
       op = it->second;
     } else {
-      *error = Message{token.GetTokenProvenance(tokens - 1),
-          "operand expected in expression"_en_US};
+      *error = "operand expected in expression"_en_US;
       return 0;
     }
   }
-  if (precedence[op] < minimumPrecedence) {
-    *error = Message{
-        token.GetTokenProvenance(opAt), "operator precedence error"_en_US};
-    return 0;
+  if (precedence[op] < minimumPrecedence && error->empty()) {
+    *error = "operator precedence error"_en_US;
   }
   ++*atToken;
-  if (op != CONST) {
+  if (op != CONST && error->empty()) {
     left = ExpressionValue(token, operandPrecedence[op], atToken, error);
-    if (error->has_value()) {
-      return 0;
-    }
     switch (op) {
     case PARENS:
       if (*atToken < tokens && token[*atToken].ToString() == ")") {
         ++*atToken;
-      } else {
-        *error = Message{token.GetTokenProvenance(tokens - 1),
-            "')' missing from expression"_en_US};
-        return 0;
+      } else if (error->empty()) {
+        *error = "')' missing from expression"_en_US;
       }
       break;
     case NOTZERO: left = !left; break;
@@ -819,7 +781,7 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
     default: CRASH_NO_CASE;
     }
   }
-  if (*atToken >= tokens) {
+  if (!error->empty() || *atToken >= tokens) {
     return left;
   }
 
@@ -839,19 +801,13 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
   if (precedence[op] < minimumPrecedence) {
     return left;
   }
-  opAt = *atToken;
   *atToken += advance;
   std::int64_t right{
       ExpressionValue(token, operandPrecedence[op], atToken, error)};
-  if (error->has_value()) {
-    return 0;
-  }
   switch (op) {
   case POWER:
     if (left == 0 && right < 0) {
-      *error =
-          Message{token.GetTokenProvenance(opAt), "0 ** negative power"_en_US};
-      return 0;
+      *error = "0 ** negative power"_en_US;
     }
     if (left == 0 || left == 1 || right == 1) {
       return left;
@@ -863,8 +819,7 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
       std::int64_t power{1};
       for (; right > 0; --right) {
         if ((power * left) / left != power) {
-          *error = Message{token.GetTokenProvenance(opAt),
-              "overflow in exponentation"_en_US};
+          *error = "overflow in exponentation"_en_US;
           return 0;
         }
         power *= left;
@@ -876,45 +831,39 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
       return 0;
     }
     if ((left * right) / left != right) {
-      *error = Message{
-          token.GetTokenProvenance(opAt), "overflow in multiplication"_en_US};
+      *error = "overflow in multiplication"_en_US;
     }
     return left * right;
   case DIVIDE:
     if (right == 0) {
-      *error =
-          Message{token.GetTokenProvenance(opAt), "division by zero"_en_US};
+      *error = "division by zero"_en_US;
       return 0;
     }
     return left / right;
   case MODULUS:
     if (right == 0) {
-      *error = Message{token.GetTokenProvenance(opAt), "modulus by zero"_en_US};
+      *error = "modulus by zero"_en_US;
       return 0;
     }
     return left % right;
   case ADD:
     if ((left < 0) == (right < 0) && (left < 0) != (left + right < 0)) {
-      *error =
-          Message{token.GetTokenProvenance(opAt), "overflow in addition"_en_US};
+      *error = "overflow in addition"_en_US;
     }
     return left + right;
   case SUBTRACT:
     if ((left < 0) != (right < 0) && (left < 0) == (left - right < 0)) {
-      *error = Message{
-          token.GetTokenProvenance(opAt), "overflow in subtraction"_en_US};
+      *error = "overflow in subtraction"_en_US;
     }
     return left - right;
   case LEFTSHIFT:
     if (right < 0 || right > 64) {
-      *error =
-          Message{token.GetTokenProvenance(opAt), "bad left shift count"_en_US};
+      *error = "bad left shift count"_en_US;
     }
     return right >= 64 ? 0 : left << right;
   case RIGHTSHIFT:
     if (right < 0 || right > 64) {
-      *error = Message{
-          token.GetTokenProvenance(opAt), "bad right shift count"_en_US};
+      *error = "bad right shift count"_en_US;
     }
     return right >= 64 ? 0 : left >> right;
   case BITAND:
@@ -932,8 +881,7 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
   case NEQV: return -(!left != !right);
   case SELECT:
     if (*atToken >= tokens || token[*atToken].ToString() != ":") {
-      *error = Message{token.GetTokenProvenance(opAt),
-          "':' required in selection expression"_en_US};
+      *error = "':' required in selection expression"_en_US;
       return left;
     } else {
       ++*atToken;
@@ -947,13 +895,13 @@ static std::int64_t ExpressionValue(const TokenSequence &token,
   return 0;  // silence compiler warning
 }
 
-bool Preprocessor::IsIfPredicateTrue(const TokenSequence &expr,
-    std::size_t first, std::size_t exprTokens, Prescanner *prescanner) {
+bool Preprocessor::IsIfPredicateTrue(const TokenSequence &expr, size_t first,
+    size_t exprTokens, Prescanner *prescanner) {
   TokenSequence expr1{StripBlanks(expr, first, first + exprTokens)};
   TokenSequence expr2;
-  for (std::size_t j{0}; j < expr1.size(); ++j) {
+  for (size_t j{0}; j < expr1.size(); ++j) {
     if (ToLowerCaseLetters(expr1[j].ToString()) == "defined") {
-      CharBlock name;
+      ContiguousChars name;
       if (j + 3 < expr1.size() && expr1[j + 1].ToString() == "(" &&
           expr1[j + 3].ToString() == ")") {
         name = expr1[j + 2];
@@ -971,15 +919,15 @@ bool Preprocessor::IsIfPredicateTrue(const TokenSequence &expr,
   }
   TokenSequence expr3{ReplaceMacros(expr2, *prescanner)};
   TokenSequence expr4{StripBlanks(expr3, 0, expr3.size())};
-  std::size_t atToken{0};
-  std::optional<Message> error;
+  size_t atToken{0};
+  MessageFixedText error;
   bool result{ExpressionValue(expr4, 0, &atToken, &error) != 0};
-  if (error.has_value()) {
-    prescanner->Error(std::move(*error));
+  if (!error.empty()) {
+    prescanner->Complain(error);
   } else if (atToken < expr4.size()) {
-    prescanner->Error(atToken == 0 ? "could not parse any expression"_en_US
-                                   : "excess characters after expression"_en_US,
-        expr4.GetTokenProvenance(atToken));
+    prescanner->Complain(atToken == 0
+            ? "could not parse any expression"_en_US
+            : "excess characters after expression"_en_US);
   }
   return result;
 }

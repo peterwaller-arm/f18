@@ -4,7 +4,6 @@
 // Defines a simple expandable buffer suitable for efficiently accumulating
 // a stream of bytes.
 
-#include <cstddef>
 #include <forward_list>
 #include <string>
 #include <utility>
@@ -30,7 +29,7 @@ public:
     return *this;
   }
 
-  std::size_t size() const { return bytes_; }
+  size_t size() const { return bytes_; }
 
   void clear() {
     blocks_.clear();
@@ -39,15 +38,15 @@ public:
     lastBlockEmpty_ = false;
   }
 
-  char *FreeSpace(std::size_t *);
-  void Claim(std::size_t);
-  void Put(const char *data, std::size_t n);
+  char *FreeSpace(size_t *);
+  void Claim(size_t);
+  void Put(const char *data, size_t n);
   void Put(const std::string &);
   void Put(char x) { Put(&x, 1); }
 
 private:
   struct Block {
-    static constexpr std::size_t capacity{1 << 20};
+    static constexpr size_t capacity{1 << 20};
     char data[capacity];
   };
 
@@ -77,7 +76,7 @@ public:
       ++*this;
       return result;
     }
-    iterator &operator+=(std::size_t n) {
+    iterator &operator+=(size_t n) {
       while (n >= Block::capacity - offset_) {
         n -= Block::capacity - offset_;
         offset_ = 0;
@@ -111,7 +110,7 @@ private:
   int LastBlockOffset() const { return bytes_ % Block::capacity; }
   std::forward_list<Block> blocks_;
   std::forward_list<Block>::iterator last_{blocks_.end()};
-  std::size_t bytes_{0};
+  size_t bytes_{0};
   bool lastBlockEmpty_{false};
 };
 }  // namespace parser

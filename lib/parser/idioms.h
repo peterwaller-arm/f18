@@ -17,6 +17,7 @@
 
 #include <list>
 #include <optional>
+#include <ostream>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -57,6 +58,8 @@ template<typename... LAMBDAS> visitors(LAMBDAS... x)->visitors<LAMBDAS...>;
 template<typename A> bool operator!(const std::optional<A> &x) {
   return !x.has_value();
 }
+}  // namespace parser
+}  // namespace Fortran
 
 // For switch statements without default: labels.
 #define CRASH_NO_CASE \
@@ -103,15 +106,49 @@ template<typename A> struct BadType : std::false_type {};
   } \
   template<typename A> constexpr bool T { class_trait_ns_##T::trait_value<A>() }
 
-// Define enum class NAME with the given enumerators, and also a
-// static function EnumToString that maps enumerators to std::string.
-std::string EnumIndexToString(int index, const char *names);
-#define ENUM_CLASS(NAME, ...) \
-  enum class NAME { __VA_ARGS__ }; \
-  static inline std::string EnumToString(NAME e) \
-    { return Fortran::parser::EnumIndexToString( \
-        static_cast<int>(e), #__VA_ARGS__); }
+// Formatting
+// TODO: remove when unparser is up and running
+namespace Fortran {
+namespace parser {
+template<typename A>
+std::ostream &operator<<(std::ostream &o, const std::optional<A> &x) {
+  if (x.has_value()) {
+    return o << x.value();
+  }
+  return o << "()";
+}
 
+template<typename A>
+std::ostream &operator<<(std::ostream &o, const std::list<A> &xs) {
+  if (xs.empty()) {
+    return o << "[]";
+  }
+  char marker{'['};
+  for (const auto &x : xs) {
+    o << marker << x;
+    marker = ' ';
+  }
+  return o << ']';
+}
+
+template<int J, typename T>
+std::ostream &formatTuple(std::ostream &o, const T &x) {
+  if constexpr (J < std::tuple_size_v<T>) {
+    return formatTuple<J + 1>(o << std::get<J>(x), x);
+  }
+  return o;
+}
+
+template<typename... As>
+std::ostream &operator<<(std::ostream &o, const std::tuple<As...> &xs) {
+  return formatTuple<0>(o << '{', xs) << '}';
+}
+
+template<typename... As>
+std::ostream &operator<<(std::ostream &o, const std::variant<As...> &x) {
+  return std::visit(
+      [&o](const auto &y) -> std::ostream & { return o << y; }, x);
+}
 }  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PARSER_IDIOMS_H_

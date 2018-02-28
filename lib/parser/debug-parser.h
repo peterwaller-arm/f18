@@ -7,7 +7,6 @@
 
 #include "basic-parsers.h"
 #include "parse-state.h"
-#include <cstddef>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -19,8 +18,7 @@ class DebugParser {
 public:
   using resultType = Success;
   constexpr DebugParser(const DebugParser &) = default;
-  constexpr DebugParser(const char *str, std::size_t n)
-    : str_{str}, length_{n} {}
+  constexpr DebugParser(const char *str, size_t n) : str_{str}, length_{n} {}
   std::optional<Success> Parse(ParseState *state) const {
     if (auto context = state->context()) {
       context->Emit(std::cout, *state->cooked().allSources());
@@ -33,10 +31,10 @@ public:
 
 private:
   const char *const str_;
-  std::size_t length_;
+  size_t length_;
 };
 
-constexpr DebugParser operator""_debug(const char str[], std::size_t n) {
+constexpr DebugParser operator""_debug(const char str[], size_t n) {
   return DebugParser{str, n};
 }
 }  // namespace parser

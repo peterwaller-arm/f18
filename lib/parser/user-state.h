@@ -6,14 +6,11 @@
 // parse tree construction so as to avoid any need for representing
 // state in static data.
 
-#include "char-block.h"
 #include <cinttypes>
-#include <set>
 #include <unordered_set>
 
 namespace Fortran {
 namespace parser {
-
 class UserState {
 public:
   using Label = std::uint64_t;
@@ -35,18 +32,9 @@ public:
     }
   }
 
-  void NoteDefinedOperator(const CharBlock &opr) {
-    definedOperators_.insert(opr);
-  }
-  bool IsDefinedOperator(const CharBlock &opr) const {
-    return definedOperators_.find(opr) != definedOperators_.end();
-  }
-
 private:
   std::unordered_set<Label> doLabels_;
   int nonlabelDoConstructNestingDepth_{0};
-
-  std::set<CharBlock> definedOperators_;
 };
 }  // namespace parser
 }  // namespace Fortran

@@ -14,7 +14,6 @@
 // This header defines the fundamental parser template classes and helper
 // template functions.  See parser-combinators.txt for documentation.
 
-#include "char-block.h"
 #include "idioms.h"
 #include "message.h"
 #include "parse-state.h"
@@ -82,7 +81,7 @@ public:
     MessageContext context{state->context()};
     ParseState backtrack{*state};
     std::optional<resultType> result{parser_.Parse(state)};
-    if (result.has_value()) {
+    if (result) {
       // preserve any new messages
       messages.Annex(state->messages());
       state->messages()->swap(messages);
@@ -138,10 +137,7 @@ public:
     Messages messages{std::move(*state->messages())};
     ParseState forked{*state};
     state->messages()->swap(messages);
-    if (parser_.Parse(&forked).has_value()) {
-      return {Success{}};
-    }
-    return {};
+    return parser_.Parse(&forked);
   }
 
 private:
@@ -234,7 +230,6 @@ inline constexpr auto operator/(const PA &pa, const PB &pb) {
 template<typename PA, typename PB> class AlternativeParser {
 public:
   using resultType = typename PA::resultType;
-  static_assert(std::is_same_v<resultType, typename PB::resultType>);
   constexpr AlternativeParser(const AlternativeParser &) = default;
   constexpr AlternativeParser(const PA &pa, const PB &pb) : pa_{pa}, pb_{pb} {}
   std::optional<resultType> Parse(ParseState *state) const {
@@ -247,9 +242,6 @@ public:
       state->messages()->swap(messages);
       return ax;
     }
-#if 0  // needed below if "tied" messages are to be saved
-    auto start = backtrack.GetLocation();
-#endif
     ParseState paState{std::move(*state)};
     state->swap(backtrack);
     state->set_context(context);
@@ -261,22 +253,11 @@ public:
     }
     // Both alternatives failed.  Retain the state (and messages) from the
     // alternative parse that went the furthest.
-    auto paEnd = paState.GetLocation();
-    auto pbEnd = state->GetLocation();
-    if (paEnd > pbEnd) {
+    if (state->GetLocation() <= paState.GetLocation()) {
       messages.Annex(paState.messages());
       state->swap(paState);
-    } else if (paEnd < pbEnd) {
-      messages.Annex(state->messages());
     } else {
-      // It's a tie.
-      messages.Annex(paState.messages());
-#if 0
-      if (paEnd > start) {
-        // Both parsers consumed text; retain messages from both.
-        messages.Annex(state->messages());
-      }
-#endif
+      messages.Annex(state->messages());
     }
     state->messages()->swap(messages);
     return {};
@@ -308,7 +289,6 @@ inline constexpr auto operator||(const AlternativeParser<PA,PB> &papb,
 template<typename PA, typename PB> class RecoveryParser {
 public:
   using resultType = typename PA::resultType;
-  static_assert(std::is_same_v<resultType, typename PB::resultType>);
   constexpr RecoveryParser(const RecoveryParser &) = default;
   constexpr RecoveryParser(const PA &pa, const PB &pb) : pa_{pa}, pb_{pb} {}
   std::optional<resultType> Parse(ParseState *state) const {
@@ -388,7 +368,7 @@ public:
     if (std::optional<paType> first{parser_.Parse(state)}) {
       resultType result;
       result.emplace_back(std::move(*first));
-      if (state->GetLocation() > start) {
+      if ((state->GetLocation() > start)) {
         result.splice(result.end(), *many(parser_).Parse(state));
       }
       return {std::move(result)};
@@ -1200,26 +1180,24 @@ private:
 
 inline constexpr auto guard(bool truth) { return GuardParser(truth); }
 
-// nextCh is a parser that succeeds if the parsing state is not
-// at the end of its input, returning the next character location and
+// nextChar is a parser that succeeds if the parsing state is not
+// at the end of its input, returning the next character and
 // advancing the parse when it does so.
-constexpr struct NextCh {
-  using resultType = const char *;
-  constexpr NextCh() {}
-  std::optional<const char *> Parse(ParseState *state) const {
-    if (state->IsAtEnd()) {
+constexpr struct NextCharParser {
+  using resultType = char;
+  constexpr NextCharParser() {}
+  std::optional<char> Parse(ParseState *state) const {
+    std::optional<char> ch{state->GetNextChar()};
+    if (!ch) {
       state->PutMessage("end of file"_en_US);
-      return {};
     }
-    const char *at{state->GetLocation()};
-    state->UncheckedAdvance();
-    return {at};
+    return ch;
   }
-} nextCh;
+} nextChar;
 
 // If a is a parser for nonstandard usage, extension(a) is a parser that
-// is disabled in strict conformance mode and otherwise sets a violation flag
-// and may emit a warning message, if those are enabled.
+// is disabled if strict standard compliance is enforced, and enabled with
+// a warning if such a warning is enabled.
 template<typename PA> class NonstandardParser {
 public:
   using resultType = typename PA::resultType;
@@ -1231,8 +1209,7 @@ public:
     }
     auto at = state->GetLocation();
     auto result = parser_.Parse(state);
-    if (result.has_value()) {
-      state->set_anyConformanceViolation();
+    if (result) {
       if (state->warnOnNonstandardUsage()) {
         state->PutMessage(at, "nonstandard usage"_en_US);
       }
@@ -1249,8 +1226,8 @@ template<typename PA> inline constexpr auto extension(const PA &parser) {
 }
 
 // If a is a parser for deprecated usage, deprecated(a) is a parser that
-// is disabled if strict standard compliance is enforced,and otherwise
-// sets of violation flag and may emit a warning.
+// is disabled if strict standard compliance is enforced, and enabled with
+// a warning if such a warning is enabled.
 template<typename PA> class DeprecatedParser {
 public:
   using resultType = typename PA::resultType;
@@ -1263,7 +1240,6 @@ public:
     auto at = state->GetLocation();
     auto result = parser_.Parse(state);
     if (result) {
-      state->set_anyConformanceViolation();
       if (state->warnOnDeprecatedUsage()) {
         state->PutMessage(at, "deprecated usage"_en_US);
       }
@@ -1277,29 +1253,6 @@ private:
 
 template<typename PA> inline constexpr auto deprecated(const PA &parser) {
   return DeprecatedParser<PA>(parser);
-}
-
-// Parsing objects with "source" members.
-template<typename PA> class SourcedParser {
-public:
-  using resultType = typename PA::resultType;
-  constexpr SourcedParser(const SourcedParser &) = default;
-  constexpr SourcedParser(const PA &parser) : parser_{parser} {}
-  std::optional<resultType> Parse(ParseState *state) const {
-    const char *start{state->GetLocation()};
-    auto result = parser_.Parse(state);
-    if (result.has_value()) {
-      result->source = CharBlock{start, state->GetLocation()};
-    }
-    return result;
-  }
-
-private:
-  const PA parser_;
-};
-
-template<typename PA> inline constexpr auto sourced(const PA &parser) {
-  return SourcedParser<PA>{parser};
 }
 
 constexpr struct GetUserState {
@@ -1328,6 +1281,15 @@ constexpr struct GetColumn {
     return {state->column()};
   }
 } getColumn;
+
+constexpr struct GetProvenance {
+  using resultType = Provenance;
+  constexpr GetProvenance() {}
+  static std::optional<Provenance> Parse(ParseState *state) {
+    return {state->GetProvenance()};
+  }
+} getProvenance;
+
 }  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PARSER_BASIC_PARSERS_H_

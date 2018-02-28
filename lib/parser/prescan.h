@@ -8,14 +8,11 @@
 // fixed form character literals on truncated card images, file
 // inclusion, and driving the Fortran source preprocessor.
 
-#include "characters.h"
 #include "message.h"
 #include "provenance.h"
 #include "token-sequence.h"
-#include <bitset>
 #include <optional>
 #include <string>
-#include <unordered_set>
 
 namespace Fortran {
 namespace parser {
@@ -28,16 +25,10 @@ public:
   Prescanner(Messages *, CookedSource *, Preprocessor *);
   Prescanner(const Prescanner &);
 
-  bool anyFatalErrors() const { return anyFatalErrors_; }
-  void set_anyFatalErrors() { anyFatalErrors_ = true; }
   Messages *messages() const { return messages_; }
 
   Prescanner &set_fixedForm(bool yes) {
     inFixedForm_ = yes;
-    return *this;
-  }
-  Prescanner &set_encoding(Encoding code) {
-    encoding_ = code;
     return *this;
   }
   Prescanner &set_enableOldDebugLines(bool yes) {
@@ -53,23 +44,13 @@ public:
     return *this;
   }
 
-  Prescanner &AddCompilerDirectiveSentinel(const std::string &);
-
   bool Prescan(ProvenanceRange);
-  void NextLine();
 
   // Callbacks for use by Preprocessor.
-  bool IsAtEnd() const { return lineStart_ >= limit_; }
-  bool IsNextLinePreprocessorDirective() const;
-  TokenSequence TokenizePreprocessorDirective();
+  std::optional<TokenSequence> NextTokenizedLine();
   Provenance GetCurrentProvenance() const { return GetProvenance(at_); }
-
-  Message &Error(Message &&);
-  Message &Error(MessageFixedText, Provenance);
-  Message &Error(MessageFormattedText &&, Provenance);
-  Message &Complain(Message &&);
-  Message &Complain(MessageFixedText, Provenance);
-  Message &Complain(MessageFormattedText &&, Provenance);
+  Message &Complain(MessageFixedText);
+  Message &Complain(MessageFormattedText &&);
 
 private:
   void BeginSourceLine(const char *at) {
@@ -105,26 +86,25 @@ private:
     return *at_;
   }
 
+  void NextLine();
   void LabelField(TokenSequence *);
   void NextChar();
   void SkipSpaces();
   bool NextToken(TokenSequence *);
   bool ExponentAndKind(TokenSequence *);
+  void EmitQuotedCharacter(TokenSequence *, char);
   void QuotedCharacterLiteral(TokenSequence *);
-  void Hollerith(TokenSequence *, int);
   bool PadOutCharacterLiteral(TokenSequence *);
   bool CommentLines();
-  bool CommentLinesAndPreprocessorDirectives(char *sentinel);
-  bool IsFixedFormCommentLine(const char *) const;
-  bool IsFreeFormComment(const char *) const;
+  bool CommentLinesAndPreprocessorDirectives();
+  bool IsFixedFormCommentLine(const char *);
+  bool IsFreeFormComment(const char *);
   bool IncludeLine(const char *);
-  bool IsPreprocessorDirectiveLine(const char *) const;
+  bool IsPreprocessorDirectiveLine(const char *);
   const char *FixedFormContinuationLine();
   bool FixedFormContinuation();
   bool FreeFormContinuation();
-  bool IsFixedFormCompilerDirectiveLine(const char *, char *sentinel) const;
-  bool IsFreeFormCompilerDirectiveLine(const char *, char *sentinel) const;
-  bool IsCompilerDirectiveSentinel(const char *) const;
+  void PayNewlineDebt(Provenance);
 
   Messages *messages_;
   CookedSource *cooked_;
@@ -138,12 +118,13 @@ private:
   const char *lineStart_{nullptr};  // next line to process; <= limit_
   bool tabInCurrentLine_{false};
   bool preventHollerith_{false};
+
   bool anyFatalErrors_{false};
+  int newlineDebt_{0};  // newline characters consumed but not yet emitted
   bool inCharLiteral_{false};
   bool inPreprocessorDirective_{false};
   bool inFixedForm_{false};
   int fixedFormColumnLimit_{72};
-  Encoding encoding_{Encoding::UTF8};
   bool enableOldDebugLines_{false};
   bool enableBackslashEscapesInCharLiterals_{true};
   int delimiterNesting_{0};
@@ -151,14 +132,6 @@ private:
       cooked_->allSources()->CompilerInsertionProvenance(' ')};
   Provenance backslashProvenance_{
       cooked_->allSources()->CompilerInsertionProvenance('\\')};
-  ProvenanceRange sixSpaceProvenance_{
-      cooked_->allSources()->AddCompilerInsertion("      "s)};
-
-  // To avoid probing the set of active compiler directive sentinel strings
-  // on every comment line, they're checked first with a cheap Bloom filter.
-  static const int prime1{1019}, prime2{1021};
-  std::bitset<prime2> compilerDirectiveBloomFilter_;  // 128 bytes
-  std::unordered_set<std::string> compilerDirectiveSentinels_;
 };
 }  // namespace parser
 }  // namespace Fortran

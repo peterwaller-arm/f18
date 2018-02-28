@@ -1,6 +1,5 @@
 #include "message.h"
 #include <cstdarg>
-#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -8,7 +7,7 @@ namespace Fortran {
 namespace parser {
 
 std::ostream &operator<<(std::ostream &o, const MessageFixedText &t) {
-  for (std::size_t j{0}; j < t.size(); ++j) {
+  for (size_t j{0}; j < t.size(); ++j) {
     o << t.str()[j];
   }
   return o;
@@ -42,7 +41,7 @@ MessageFixedText MessageExpectedText::AsMessageFixedText() const {
   if (chars[1] == '\0') {
     // one-time initialization of array used for permanant single-byte string
     // pointers
-    for (std::size_t j{0}; j < sizeof chars; ++j) {
+    for (size_t j{0}; j < sizeof chars; ++j) {
       chars[j] = j;
     }
   }
@@ -74,11 +73,8 @@ Provenance Message::Emit(
   return provenance_;
 }
 
-void Messages::Emit(std::ostream &o, const char *prefix) const {
+void Messages::Emit(std::ostream &o) const {
   for (const auto &msg : messages_) {
-    if (prefix) {
-      o << prefix;
-    }
     if (msg.context()) {
       o << "In the context ";
     }

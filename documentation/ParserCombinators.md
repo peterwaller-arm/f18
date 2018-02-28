@@ -45,10 +45,7 @@ These objects and functions are (or return) the fundamental parsers:
 * `cut` is a trivial parser that always fails silently.
 * `guard(pred)` returns a parser that succeeds if and only if the predicate
   expression evaluates to true.
-* `nextCh` consumes the next character and returns its location,
-  and fails at EOF.
-* `"xyz"_ch` succeeds if the next character consumed matches any of those
-  in the string (ignoring case), and returns its location.
+* `nextChar` returns the next character, and fails at EOF.
 
 ### Combinators
 These functions and operators combine existing parsers to generate new parsers.
@@ -81,9 +78,6 @@ They are `constexpr`, so they should be viewed as type-safe macros.
 * `deprecated(p)` parses p if strict standard compliance is disabled,
   with a warning if deprecated usage warnings are enabled.
 * `inContext(..., p)` runs p within an error message context.
-* `recovery(p, q)` is equivalent to `p || q`, except that error messages
-  generated from the first parser are retained, and a flag is set in
-  the ParseState to remember that error recovery was necessary.
 
 Note that
 ```
@@ -99,8 +93,6 @@ collect the values that they return.
 * `construct<T>{}(p1, p2, ...)` matches zero or more parsers in succession,
   collecting their results and then passing them with move semantics to a
   constructor for the type T if they all succeed.
-* `sourced(p)` matches p, and fills in its `source` data member with the
-  locations of the cooked character stream that it consumed
 * `applyFunction(f, p1, p2, ...)` matches one or more parsers in succession,
   collecting their results and passing them as rvalue reference arguments to
   some function, returning its result.
@@ -114,15 +106,19 @@ These are non-advancing state inquiry and update parsers:
 
 * `getColumn` returns the 1-based column position.
 * `inFixedForm` succeeds in fixed form Fortran source.
+* `setInFixedForm` sets the fixed form flag, returning its prior value.
+* `columns` returns the 1-based column number after which source is clipped.
+* `setColumns(c)` sets the column limit and returns its prior value.
 
 ### Token Parsers
 Last, we have these basic parsers on which the actual grammar of the Fortran
 is built.  All of the following parsers consume characters acquired from
-`nextCh`.
+`nextChar`.
 
 * `spaces` always succeeds after consuming any spaces or tabs
 * `digit` matches one cooked decimal digit (0-9)
 * `letter` matches one cooked letter (A-Z)
+* `CharMatch<'c'>{}` matches one specific cooked character.
 * `"..."_tok` match the content of the string, skipping spaces before and
   after, and with multiple spaces accepted for any internal space.
   (Note that the `_tok` suffix is optional when the parser appears before

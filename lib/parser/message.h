@@ -6,7 +6,6 @@
 
 #include "idioms.h"
 #include "provenance.h"
-#include <cstddef>
 #include <forward_list>
 #include <memory>
 #include <optional>
@@ -20,7 +19,7 @@ namespace parser {
 class MessageFixedText {
 public:
   MessageFixedText() {}
-  constexpr MessageFixedText(const char str[], std::size_t n)
+  constexpr MessageFixedText(const char str[], size_t n)
     : str_{str}, bytes_{n} {}
   constexpr MessageFixedText(const MessageFixedText &) = default;
   MessageFixedText(MessageFixedText &&) = default;
@@ -28,17 +27,17 @@ public:
   MessageFixedText &operator=(MessageFixedText &&) = default;
 
   const char *str() const { return str_; }
-  std::size_t size() const { return bytes_; }
+  size_t size() const { return bytes_; }
   bool empty() const { return bytes_ == 0; }
 
   std::string ToString() const;
 
 private:
   const char *str_{nullptr};
-  std::size_t bytes_{0};
+  size_t bytes_{0};
 };
 
-constexpr MessageFixedText operator""_en_US(const char str[], std::size_t n) {
+constexpr MessageFixedText operator""_en_US(const char str[], size_t n) {
   return MessageFixedText{str, n};
 }
 
@@ -56,14 +55,14 @@ private:
 // Represents a formatted rendition of "expected '%s'"_en_US on a constant text.
 class MessageExpectedText {
 public:
-  MessageExpectedText(const char *s, std::size_t n) : str_{s}, bytes_{n} {}
+  MessageExpectedText(const char *s, size_t n) : str_{s}, bytes_{n} {}
   explicit MessageExpectedText(char ch) : singleton_{ch} {}
   MessageFixedText AsMessageFixedText() const;
 
 private:
   const char *str_{nullptr};
   char singleton_;
-  std::size_t bytes_{1};
+  size_t bytes_{1};
 };
 
 class Message;
@@ -133,7 +132,7 @@ public:
   const AllSources &allSources() const { return allSources_; }
 
   Message &Put(Message &&m) {
-    CHECK(allSources_.IsValid(m.provenance()));
+    CHECK(m.provenance() < allSources_.size());
     if (messages_.empty()) {
       messages_.emplace_front(std::move(m));
       last_ = messages_.begin();
@@ -154,7 +153,7 @@ public:
     }
   }
 
-  void Emit(std::ostream &, const char *prefix = nullptr) const;
+  void Emit(std::ostream &) const;
 
 private:
   const AllSources &allSources_;

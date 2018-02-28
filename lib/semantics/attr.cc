@@ -7,7 +7,29 @@ namespace semantics {
 
 constexpr static size_t toInt(Attr attr) { return static_cast<size_t>(attr); }
 
-const Attrs Attrs::EMPTY;
+static const char *attrToString[] = {
+    [toInt(Attr::ABSTRACT)] = "ABSTRACT",
+    [toInt(Attr::ALLOCATABLE)] = "ALLOCATABLE",
+    [toInt(Attr::ASYNCHRONOUS)] = "ASYNCHRONOUS",
+    [toInt(Attr::BIND_C)] = "BIND(C)",
+    [toInt(Attr::CONTIGUOUS)] = "CONTIGUOUS",
+    [toInt(Attr::EXTERNAL)] = "EXTERNAL",
+    [toInt(Attr::INTENT_IN)] = "INTENT_IN",
+    [toInt(Attr::INTENT_OUT)] = "INTENT_OUT",
+    [toInt(Attr::INTRINSIC)] = "INTRINSIC",
+    [toInt(Attr::NOPASS)] = "NOPASS",
+    [toInt(Attr::OPTIONAL)] = "OPTIONAL",
+    [toInt(Attr::PARAMETER)] = "PARAMETER",
+    [toInt(Attr::PASS)] = "PASS",
+    [toInt(Attr::POINTER)] = "POINTER",
+    [toInt(Attr::PRIVATE)] = "PRIVATE",
+    [toInt(Attr::PROTECTED)] = "PROTECTED",
+    [toInt(Attr::PUBLIC)] = "PUBLIC",
+    [toInt(Attr::SAVE)] = "SAVE",
+    [toInt(Attr::TARGET)] = "TARGET",
+    [toInt(Attr::VALUE)] = "VALUE",
+    [toInt(Attr::VOLATILE)] = "VOLATILE",
+};
 
 Attrs::Attrs(std::initializer_list<Attr> attrs) {
   bits_ = 0;
@@ -42,7 +64,7 @@ void Attrs::CheckValid(const Attrs &allowed) const {
 }
 
 std::ostream &operator<<(std::ostream &o, Attr attr) {
-  return o << EnumToString(attr);
+  return o << attrToString[toInt(attr)];
 }
 
 std::ostream &operator<<(std::ostream &o, const Attrs &attrs) {
@@ -52,7 +74,7 @@ std::ostream &operator<<(std::ostream &o, const Attrs &attrs) {
       if (n++) {
         o << ", ";
       }
-      o << EnumToString(static_cast<Attr>(i));
+      o << attrToString[i];
     }
   }
   return o;

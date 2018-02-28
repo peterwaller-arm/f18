@@ -7,7 +7,7 @@ namespace parser {
 
 void OffsetToProvenanceMappings::clear() { provenanceMap_.clear(); }
 
-std::size_t OffsetToProvenanceMappings::size() const {
+size_t OffsetToProvenanceMappings::size() const {
   if (provenanceMap_.empty()) {
     return 0;
   }
@@ -32,11 +32,11 @@ void OffsetToProvenanceMappings::Put(const OffsetToProvenanceMappings &that) {
   }
 }
 
-ProvenanceRange OffsetToProvenanceMappings::Map(std::size_t at) const {
+ProvenanceRange OffsetToProvenanceMappings::Map(size_t at) const {
   CHECK(!provenanceMap_.empty());
-  std::size_t low{0}, count{provenanceMap_.size()};
+  size_t low{0}, count{provenanceMap_.size()};
   while (count > 1) {
-    std::size_t mid{low + (count >> 1)};
+    size_t mid{low + (count >> 1)};
     if (provenanceMap_[mid].start > at) {
       count = mid - low;
     } else {
@@ -44,15 +44,15 @@ ProvenanceRange OffsetToProvenanceMappings::Map(std::size_t at) const {
       low = mid;
     }
   }
-  std::size_t offset{at - provenanceMap_[low].start};
+  size_t offset{at - provenanceMap_[low].start};
   return provenanceMap_[low].range.Suffix(offset);
 }
 
-void OffsetToProvenanceMappings::RemoveLastBytes(std::size_t bytes) {
+void OffsetToProvenanceMappings::RemoveLastBytes(size_t bytes) {
   for (; bytes > 0; provenanceMap_.pop_back()) {
     CHECK(!provenanceMap_.empty());
     ContiguousProvenanceMapping &last{provenanceMap_.back()};
-    std::size_t chunk{last.range.size()};
+    size_t chunk{last.range.size()};
     if (bytes < chunk) {
       last.range = last.range.Prefix(chunk - bytes);
       break;
@@ -128,7 +128,7 @@ void AllSources::Identify(std::ostream &o, Provenance at,
   std::visit(
       visitors{
           [&](const Inclusion &inc) {
-            std::size_t offset{origin.covers.MemberOffset(at)};
+            size_t offset{origin.covers.MemberOffset(at)};
             std::pair<int, int> pos{inc.source.FindOffsetLineAndColumn(offset)};
             o << prefix << "at line " << pos.first << ", column " << pos.second;
             if (echoSourceLine) {
@@ -165,20 +165,24 @@ void AllSources::Identify(std::ostream &o, Provenance at,
               o << prefix << "and expanded to\n"
                 << indented << "  " << mac.expansion << '\n'
                 << indented << "  ";
-              for (std::size_t j{0}; origin.covers.OffsetMember(j) < at; ++j) {
+              for (size_t j{0}; origin.covers.OffsetMember(j) < at; ++j) {
                 o << (mac.expansion[j] == '\t' ? '\t' : ' ');
               }
               o << "^\n";
             }
           },
           [&](const CompilerInsertion &ins) {
-            o << prefix << ins.text << '\n';
+            o << prefix << "in text ";
+            if (echoSourceLine) {
+              o << '\'' << ins.text << "' ";
+            }
+            o << "inserted by the compiler\n";
           }},
       origin.u);
 }
 
 const SourceFile *AllSources::GetSourceFile(
-    Provenance at, std::size_t *offset) const {
+    Provenance at, size_t *offset) const {
   const Origin &origin{MapToOrigin(at)};
   return std::visit(visitors{[&](const Inclusion &inc) {
                                if (offset != nullptr) {
@@ -212,7 +216,7 @@ std::string AllSources::GetPath(Provenance at) const {
 }
 
 int AllSources::GetLineNumber(Provenance at) const {
-  std::size_t offset{0};
+  size_t offset{0};
   const SourceFile *source{GetSourceFile(at, &offset)};
   return source ? source->FindOffsetLineAndColumn(offset).first : 0;
 }
@@ -239,7 +243,7 @@ AllSources::Origin::Origin(ProvenanceRange r, ProvenanceRange def,
 AllSources::Origin::Origin(ProvenanceRange r, const std::string &text)
   : u{CompilerInsertion{text}}, covers{r} {}
 
-const char &AllSources::Origin::operator[](std::size_t n) const {
+const char &AllSources::Origin::operator[](size_t n) const {
   return std::visit(
       visitors{[n](const Inclusion &inc) -> const char & {
                  return inc.source.content()[n];
@@ -253,9 +257,9 @@ const char &AllSources::Origin::operator[](std::size_t n) const {
 
 const AllSources::Origin &AllSources::MapToOrigin(Provenance at) const {
   CHECK(range_.Contains(at));
-  std::size_t low{0}, count{origin_.size()};
+  size_t low{0}, count{origin_.size()};
   while (count > 1) {
-    std::size_t mid{low + (count >> 1)};
+    size_t mid{low + (count >> 1)};
     if (at < origin_[mid].covers.start()) {
       count = mid - low;
     } else {
@@ -290,7 +294,7 @@ static void DumpRange(std::ostream &o, const ProvenanceRange &r) {
 
 void OffsetToProvenanceMappings::Dump(std::ostream &o) const {
   for (const ContiguousProvenanceMapping &m : provenanceMap_) {
-    std::size_t n{m.range.size()};
+    size_t n{m.range.size()};
     o << "offsets [" << m.start << ".." << (m.start + n - 1)
       << "] -> provenances ";
     DumpRange(o, m.range);
@@ -314,12 +318,7 @@ void AllSources::Dump(std::ostream &o) const {
                         },
                    [&](const Macro &mac) { o << "macro " << mac.expansion; },
                    [&](const CompilerInsertion &ins) {
-                     o << "compiler '" << ins.text << '\'';
-                     if (ins.text.length() == 1) {
-                       int ch = ins.text[0];
-                       o << " (0x" << std::hex << (ch & 0xff) << std::dec
-                         << ")";
-                     }
+                     o << "compiler " << ins.text;
                    }},
         m.u);
     o << '\n';
