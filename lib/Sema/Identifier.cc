@@ -1,26 +1,18 @@
 
 #include "flang/Sema/Identifier.h"
-#include <set>
-#include <cassert>
-#include <cstring>
 
-using Fortran::semantics::Identifier;
+#include <map>
 
-static std::set<std::string> all;
+using Fortran::semantics::Identifier ;
 
-Identifier::Identifier(const std::string &text) 
+static std::map<std::string, Identifier*> all ;
+
+const Identifier *
+Identifier::get(std::string n) 
 {
-  // TODO: Produce a proper 'ICE' if empty text.
-  assert( text.size() > 0 ) ;
-  text_ = &(*(all.insert(text).first)) ; 
+  Identifier * &ref = all[n] ;
+  if (!ref) {
+    ref = new Identifier(n) ;
+  }
+  return ref ;
 }
-
-Identifier::Identifier(const char *text) 
-{
-  // TODO: Produce a proper 'ICE' if text is empty or null.
-  assert(text) ;
-  assert(text[0] != '\0' ); // cheaper than strlen(text)==0 
-  text_ = &(*(all.insert( std::string(text) ).first)) ; 
-}
-
-

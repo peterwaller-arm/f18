@@ -1,6 +1,7 @@
 #ifndef FORTRAN_ATTR_H_
 #define FORTRAN_ATTR_H_
 
+#include "../parser/idioms.h"
 #include <cinttypes>
 #include <iostream>
 #include <string>
@@ -8,34 +9,18 @@
 namespace Fortran {
 namespace semantics {
 
+
 // All available attributes.
-enum class Attr {
-  ABSTRACT,
-  ALLOCATABLE,
-  ASYNCHRONOUS,
-  BIND_C,
-  CONTIGUOUS,
-  EXTERNAL,
-  INTENT_IN,
-  INTENT_OUT,
-  INTRINSIC,
-  NOPASS,
-  OPTIONAL,
-  PARAMETER,
-  PASS,
-  POINTER,
-  PRIVATE,
-  PROTECTED,
-  PUBLIC,
-  SAVE,
-  TARGET,
-  VALUE,
-  VOLATILE,
-};
+ENUM_CLASS(Attr, ABSTRACT, ALLOCATABLE, ASYNCHRONOUS, BIND_C, CONTIGUOUS,
+    DEFERRED, ELEMENTAL, EXTERNAL, IMPURE, INTENT_IN, INTENT_OUT, INTRINSIC,
+    MODULE, NON_OVERRIDABLE, NON_RECURSIVE, NOPASS, OPTIONAL, PARAMETER, PASS,
+    POINTER, PRIVATE, PROTECTED, PUBLIC, PURE, RECURSIVE, SAVE, TARGET, VALUE,
+    VOLATILE)
 
 // Set of attributes
 class Attrs {
 public:
+  static const Attrs EMPTY;
   Attrs() : bits_{0} {}
   Attrs(std::initializer_list<Attr> attrs);
   bool empty() const { return bits_ == 0; }

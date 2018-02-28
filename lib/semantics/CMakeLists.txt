@@ -1,5 +1,9 @@
 
-#add_library( FlangSemantics
-#  type.cc
-#  attr.cc
-#)
+add_library(FlangSemantics
+  attr.cc
+  make-types.cc
+  resolve-names.cc
+  scope.cc
+  symbol.cc
+  type.cc
+)

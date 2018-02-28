@@ -1,8 +1,8 @@
 #ifndef FORTRAN_PARSER_PARSE_TREE_VISITOR_H_
 #define FORTRAN_PARSER_PARSE_TREE_VISITOR_H_
 
-#include "format-specification.h"
 #include "parse-tree.h"
+#include <cstddef>
 #include <optional>
 #include <tuple>
 #include <variant>
@@ -18,7 +18,7 @@
 namespace Fortran {
 namespace parser {
 
-// Default case for visitation of non-class data members (and strings)
+// Default case for visitation of non-class data members and strings
 template<typename A, typename V>
 typename std::enable_if<!std::is_class_v<A> ||
     std::is_same_v<std::string, A>>::type
@@ -27,6 +27,12 @@ Walk(const A &x, V &visitor) {
     visitor.Post(x);
   }
 }
+
+template<typename V> void Walk(const format::ControlEditDesc &, V &);
+template<typename V> void Walk(const format::DerivedTypeDataEditDesc &, V &);
+template<typename V> void Walk(const format::FormatItem &, V &);
+template<typename V> void Walk(const format::FormatSpecification &, V &);
+template<typename V> void Walk(const format::IntrinsicTypeDataEditDesc &, V &);
 
 // Traversal of needed STL template classes (optional, list, tuple, variant)
 template<typename T, typename V>
@@ -40,7 +46,7 @@ template<typename T, typename V> void Walk(const std::list<T> &x, V &visitor) {
     Walk(elem, visitor);
   }
 }
-template<size_t I = 0, typename Func, typename T>
+template<std::size_t I = 0, typename Func, typename T>
 void ForEachInTuple(const T &tuple, Func func) {
   if constexpr (I < std::tuple_size_v<T>) {
     func(std::get<I>(tuple));
@@ -119,7 +125,14 @@ void Walk(const DefaultChar<T> &x, V &visitor) {
 
 template<typename T, typename V> void Walk(const Statement<T> &x, V &visitor) {
   if (visitor.Pre(x)) {
+    // N.B. the label is not traversed
     Walk(x.statement, visitor);
+    visitor.Post(x);
+  }
+}
+
+template<typename V> void Walk(const Name &x, V &visitor) {
+  if (visitor.Pre(x)) {
     visitor.Post(x);
   }
 }
@@ -170,44 +183,6 @@ void Walk(const DeclarationTypeSpec::Class &x, V &visitor) {
 template<typename V> void Walk(const DeclarationTypeSpec::Type &x, V &visitor) {
   if (visitor.Pre(x)) {
     Walk(x.derived, visitor);
-    visitor.Post(x);
-  }
-}
-template<typename V> void Walk(const Fortran::ControlEditDesc &x, V &visitor) {
-  if (visitor.Pre(x)) {
-    Walk(x.kind, visitor);
-    visitor.Post(x);
-  }
-}
-template<typename V>
-void Walk(const Fortran::DerivedTypeDataEditDesc &x, V &visitor) {
-  if (visitor.Pre(x)) {
-    Walk(x.type, visitor);
-    Walk(x.parameters, visitor);
-    visitor.Post(x);
-  }
-}
-template<typename V> void Walk(const Fortran::FormatItem &x, V &visitor) {
-  if (visitor.Pre(x)) {
-    Walk(x.repeatCount, visitor);
-    Walk(x.u, visitor);
-    visitor.Post(x);
-  }
-}
-template<typename V> void Walk(const FormatSpecification &x, V &visitor) {
-  if (visitor.Pre(x)) {
-    Walk(x.items, visitor);
-    Walk(x.unlimitedItems, visitor);
-    visitor.Post(x);
-  }
-}
-template<typename V>
-void Walk(const Fortran::IntrinsicTypeDataEditDesc &x, V &visitor) {
-  if (visitor.Pre(x)) {
-    Walk(x.kind, visitor);
-    Walk(x.width, visitor);
-    Walk(x.digits, visitor);
-    Walk(x.exponentWidth, visitor);
     visitor.Post(x);
   }
 }
@@ -272,10 +247,13 @@ template<typename V> void Walk(const ReadStmt &x, V &visitor) {
 }
 template<typename V> void Walk(const RealLiteralConstant &x, V &visitor) {
   if (visitor.Pre(x)) {
-    Walk(x.intPart, visitor);
-    Walk(x.fraction, visitor);
-    Walk(x.exponent, visitor);
+    Walk(x.real, visitor);
     Walk(x.kind, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V> void Walk(const RealLiteralConstant::Real &x, V &visitor) {
+  if (visitor.Pre(x)) {
     visitor.Post(x);
   }
 }
@@ -324,6 +302,45 @@ template<typename V> void Walk(const WriteStmt &x, V &visitor) {
     Walk(x.format, visitor);
     Walk(x.controls, visitor);
     Walk(x.items, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V> void Walk(const format::ControlEditDesc &x, V &visitor) {
+  if (visitor.Pre(x)) {
+    Walk(x.kind, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V>
+void Walk(const format::DerivedTypeDataEditDesc &x, V &visitor) {
+  if (visitor.Pre(x)) {
+    Walk(x.type, visitor);
+    Walk(x.parameters, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V> void Walk(const format::FormatItem &x, V &visitor) {
+  if (visitor.Pre(x)) {
+    Walk(x.repeatCount, visitor);
+    Walk(x.u, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V>
+void Walk(const format::FormatSpecification &x, V &visitor) {
+  if (visitor.Pre(x)) {
+    Walk(x.items, visitor);
+    Walk(x.unlimitedItems, visitor);
+    visitor.Post(x);
+  }
+}
+template<typename V>
+void Walk(const format::IntrinsicTypeDataEditDesc &x, V &visitor) {
+  if (visitor.Pre(x)) {
+    Walk(x.kind, visitor);
+    Walk(x.width, visitor);
+    Walk(x.digits, visitor);
+    Walk(x.exponentWidth, visitor);
     visitor.Post(x);
   }
 }

@@ -5,11 +5,14 @@
 // conversions here to avoid dependences upon <cctype> and
 // also to accomodate Fortran tokenization.
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
 namespace Fortran {
 namespace parser {
+
+enum class Encoding { UTF8, EUC_JP };
 
 static constexpr bool IsUpperCaseLetter(char ch) {
   if constexpr ('A' == static_cast<char>(0xc1)) {
@@ -60,16 +63,32 @@ static constexpr char ToLowerCaseLetter(char &&ch) {
   return IsUpperCaseLetter(ch) ? ch - 'A' + 'a' : ch;
 }
 
-static constexpr bool IsSameApartFromCase(char x, char y) {
-  return ToLowerCaseLetter(x) == ToLowerCaseLetter(y);
-}
-
 static inline std::string ToLowerCaseLetters(const std::string &str) {
   std::string lowered{str};
   for (char &ch : lowered) {
     ch = ToLowerCaseLetter(ch);
   }
   return lowered;
+}
+
+static constexpr char ToUpperCaseLetter(char ch) {
+  return IsLowerCaseLetter(ch) ? ch - 'a' + 'A' : ch;
+}
+
+static constexpr char ToUpperCaseLetter(char &&ch) {
+  return IsLowerCaseLetter(ch) ? ch - 'a' + 'A' : ch;
+}
+
+static inline std::string ToUpperCaseLetters(const std::string &str) {
+  std::string raised{str};
+  for (char &ch : raised) {
+    ch = ToUpperCaseLetter(ch);
+  }
+  return raised;
+}
+
+static constexpr bool IsSameApartFromCase(char x, char y) {
+  return ToLowerCaseLetter(x) == ToLowerCaseLetter(y);
 }
 
 static constexpr char DecimalDigitValue(char ch) { return ch - '0'; }
@@ -82,7 +101,7 @@ static constexpr char HexadecimalDigitValue(char ch) {
 
 static constexpr std::optional<char> BackslashEscapeValue(char ch) {
   switch (ch) {
-  case 'a': return {'\a'};
+  // case 'a': return {'\a'};  pgf90 doesn't know about \a
   case 'b': return {'\b'};
   case 'f': return {'\f'};
   case 'n': return {'\n'};
@@ -98,7 +117,7 @@ static constexpr std::optional<char> BackslashEscapeValue(char ch) {
 
 static constexpr std::optional<char> BackslashEscapeChar(char ch) {
   switch (ch) {
-  case '\a': return {'a'};
+  // case '\a': return {'a'};  pgf90 doesn't know about \a
   case '\b': return {'b'};
   case '\f': return {'f'};
   case '\n': return {'n'};
@@ -111,6 +130,39 @@ static constexpr std::optional<char> BackslashEscapeChar(char ch) {
   default: return {};
   }
 }
+
+template<typename NORMAL, typename INSERTED>
+void EmitQuotedChar(char ch, const NORMAL &emit, const INSERTED &insert,
+    bool doubleDoubleQuotes = true, bool doubleBackslash = true) {
+  if (ch == '"') {
+    if (doubleDoubleQuotes) {
+      insert('"');
+    }
+    emit('"');
+  } else if (ch == '\\') {
+    if (doubleBackslash) {
+      insert('\\');
+    }
+    emit('\\');
+  } else if (ch < ' ') {
+    insert('\\');
+    if (std::optional escape{BackslashEscapeChar(ch)}) {
+      emit(*escape);
+    } else {
+      // octal escape sequence
+      insert('0' + ((ch >> 6) & 3));
+      insert('0' + ((ch >> 3) & 7));
+      insert('0' + (ch & 7));
+    }
+  } else {
+    emit(ch);
+  }
+}
+
+std::optional<int> UTF8CharacterBytes(const char *);
+std::optional<int> EUC_JPCharacterBytes(const char *);
+std::optional<std::size_t> CountCharacters(
+    const char *, std::size_t bytes, std::optional<int> (*)(const char *));
 }  // namespace parser
 }  // namespace Fortran
 #endif  // FORTRAN_PARSER_CHARACTERS_H_
