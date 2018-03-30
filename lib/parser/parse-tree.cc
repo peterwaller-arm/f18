@@ -1,7 +1,6 @@
 #include "parse-tree.h"
 #include "idioms.h"
 #include "indirection.h"
-#include "user-state.h"
 #include <algorithm>
 
 namespace Fortran {
@@ -30,7 +29,7 @@ ProcedureDesignator Designator::ConvertToProcedureDesignator() {
       visitors{
           [](ObjectName &n) -> ProcedureDesignator { return {std::move(n)}; },
           [](DataReference &dr) -> ProcedureDesignator {
-            if (Name * n{std::get_if<Name>(&dr.u)}) {
+            if (Name *n = std::get_if<Name>(&dr.u)) {
               return {std::move(*n)};
             }
             StructureComponent &sc{
@@ -46,28 +45,24 @@ ProcedureDesignator Designator::ConvertToProcedureDesignator() {
       u);
 }
 
-std::optional<Call> Designator::ConvertToCall(const UserState *ustate) {
+std::optional<Call> Designator::ConvertToCall() {
   return std::visit(
       visitors{[](ObjectName &n) -> std::optional<Call> {
                  return {Call{ProcedureDesignator{std::move(n)},
                      std::list<ActualArgSpec>{}}};
                },
-          [=](DataReference &dr) -> std::optional<Call> {
+          [this](DataReference &dr) -> std::optional<Call> {
             if (std::holds_alternative<Indirection<CoindexedNamedObject>>(
                     dr.u)) {
               return {};
             }
-            if (Name * n{std::get_if<Name>(&dr.u)}) {
+            if (Name *n = std::get_if<Name>(&dr.u)) {
               return {Call{ProcedureDesignator{std::move(*n)},
                   std::list<ActualArgSpec>{}}};
             }
             if (auto *isc =
                     std::get_if<Indirection<StructureComponent>>(&dr.u)) {
               StructureComponent &sc{**isc};
-              if (ustate &&
-                  ustate->IsOldStructureComponent(sc.component.source)) {
-                return {};
-              }
               Variable var{Indirection<Designator>{std::move(sc.base)}};
               ProcComponentRef pcr{
                   Scalar<Variable>{std::move(var)}, std::move(sc.component)};
@@ -92,10 +87,6 @@ std::optional<Call> Designator::ConvertToCall(const UserState *ustate) {
             }
             StructureComponent &bsc{
                 *std::get<Indirection<StructureComponent>>(ae.base.u)};
-            if (ustate &&
-                ustate->IsOldStructureComponent(bsc.component.source)) {
-              return {};
-            }
             Variable var{Indirection<Designator>{std::move(bsc.base)}};
             ProcComponentRef pcr{
                 Scalar<Variable>{std::move(var)}, std::move(bsc.component)};

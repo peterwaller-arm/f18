@@ -16,7 +16,6 @@
 #include "indirection.h"
 #include "message.h"
 #include "provenance.h"
-#include "user-state.h"
 #include <cinttypes>
 #include <list>
 #include <optional>
@@ -1717,7 +1716,7 @@ struct Designator {
   UNION_CLASS_BOILERPLATE(Designator);
   bool EndsInBareName() const;
   ProcedureDesignator ConvertToProcedureDesignator();
-  std::optional<Call> ConvertToCall(const UserState *ustate = nullptr);
+  std::optional<Call> ConvertToCall();
   std::variant<ObjectName, DataReference, Substring> u;
 };
 

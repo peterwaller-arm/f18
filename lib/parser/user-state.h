@@ -16,12 +16,6 @@ namespace parser {
 
 class UserState {
 public:
-  void NewSubprogram() {
-    doLabels_.clear();
-    nonlabelDoConstructNestingDepth_ = 0;
-    oldStructureComponents_.clear();
-  }
-
   using Label = std::uint64_t;
   bool IsDoLabel(Label label) const {
     return doLabels_.find(label) != doLabels_.end();
@@ -30,6 +24,10 @@ public:
     return nonlabelDoConstructNestingDepth_ > 0;
   }
   void NewDoLabel(Label label) { doLabels_.insert(label); }
+  void NewSubprogram() {
+    doLabels_.clear();
+    nonlabelDoConstructNestingDepth_ = 0;
+  }
   void EnterNonlabelDoConstruct() { ++nonlabelDoConstructNestingDepth_; }
   void LeaveDoConstruct() {
     if (nonlabelDoConstructNestingDepth_ > 0) {
@@ -37,17 +35,18 @@ public:
     }
   }
 
-  void NoteOldStructureComponent(const CharBlock &name) {
-    oldStructureComponents_.insert(name);
+  void NoteDefinedOperator(const CharBlock &opr) {
+    definedOperators_.insert(opr);
   }
-  bool IsOldStructureComponent(const CharBlock &name) const {
-    return oldStructureComponents_.find(name) != oldStructureComponents_.end();
+  bool IsDefinedOperator(const CharBlock &opr) const {
+    return definedOperators_.find(opr) != definedOperators_.end();
   }
 
 private:
   std::unordered_set<Label> doLabels_;
   int nonlabelDoConstructNestingDepth_{0};
-  std::set<CharBlock> oldStructureComponents_;
+
+  std::set<CharBlock> definedOperators_;
 };
 }  // namespace parser
 }  // namespace Fortran
