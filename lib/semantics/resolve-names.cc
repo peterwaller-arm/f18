@@ -24,24 +24,24 @@ public:
   // Get the implicit type for identifiers starting with ch. May be null.
   const DeclTypeSpec *GetType(char ch) const;
   // Record the implicit type for this range of characters.
-  void SetType(const DeclTypeSpec &type, parser::Location lo, parser::Location);
-  // After the default implicit rules (if no IMPLICIT NONE).
+  void SetType(const DeclTypeSpec &type, parser::Location lo, parser::Location,
+      bool isDefault = false);
+  // Apply the default implicit rules (if no IMPLICIT NONE).
   void ApplyDefaultRules();
 
 private:
+  // Map 'a'-'z' to index into map_ and vice versa.
   static const int CHARS_BEFORE_J = 9;
   static const int CHARS_BEFORE_S = 18;
   static const int CHARS_TOTAL = 26;
-  // Map 'a'-'z' to index into map_ and vice versa.
   static int CharToIndex(char ch);
   static char IndexToChar(int i);
 
   MessageHandler &messages_;
   // each type referenced in implicit specs is in types_
-  std::vector<DeclTypeSpec> types_;
-  // map_ goes from char index (0-25) to 0 (if no implicit type for char) or t
-  // where types_[t-1] is the implicit type for the char
-  std::array<unsigned int, CHARS_TOTAL> map_;
+  std::list<DeclTypeSpec> types_;
+  // map_ goes from char index (0-25) to nullptr or pointer to element of types_
+  std::array<const DeclTypeSpec *, CHARS_TOTAL> map_;
   friend std::ostream &operator<<(std::ostream &, const ImplicitRules &);
 };
 
@@ -141,9 +141,9 @@ public:
   const parser::CharBlock *currStmtSource() { return currStmtSource_; }
 
   // Emit a message associated with the current statement source.
-  void Say(Message &&x);
-  void Say(parser::MessageFixedText &&x);
-  void Say(parser::MessageFormattedText &&x);
+  void Say(Message &&);
+  void Say(parser::MessageFixedText &&);
+  void Say(parser::MessageFormattedText &&);
 
 private:
   // Where messages are emitted:
@@ -162,9 +162,9 @@ public:
 
   ImplicitRulesVisitor(parser::Messages &messages) : MessageHandler(messages) {}
 
-  void Post(const parser::ParameterStmt &x);
-  bool Pre(const parser::ImplicitStmt &x);
-  bool Pre(const parser::LetterSpec &x);
+  void Post(const parser::ParameterStmt &);
+  bool Pre(const parser::ImplicitStmt &);
+  bool Pre(const parser::LetterSpec &);
   bool Pre(const parser::ImplicitSpec &);
   void Post(const parser::ImplicitSpec &);
   void Post(const parser::ImplicitPart &);
@@ -246,30 +246,27 @@ private:
 
 ImplicitRules::ImplicitRules(MessageHandler &messages) : messages_{messages} {
   for (int i = 0; i < CHARS_TOTAL; ++i) {
-    map_[i] = 0;
+    map_[i] = nullptr;
   }
 }
 
 const DeclTypeSpec *ImplicitRules::GetType(char ch) const {
   int index = CharToIndex(ch);
-  if (index < 0) {
-    return nullptr;  // not a-z
-  } else {
-    unsigned t = map_[index];
-    return t ? &types_[t-1] : nullptr;
-  }
+  return index >= 0 ? map_[index] : nullptr;
 }
 
-void ImplicitRules::SetType(
-    const DeclTypeSpec &type, parser::Location lo, parser::Location hi) {
+// isDefault is set when we are applying the default rules, so it is not
+// an error if the type is already set.
+void ImplicitRules::SetType(const DeclTypeSpec &type, parser::Location lo,
+    parser::Location hi, bool isDefault) {
   types_.push_back(type);
   int loIndex = CharToIndex(*lo);
   CHECK(loIndex >= 0 && "not a letter");
   int hiIndex = CharToIndex(*hi);
   for (int i = loIndex; i <= hiIndex; ++i) {
-    if (map_[i] == 0) {
-      map_[i] = types_.size();
-    } else {
+    if (!map_[i]) {
+      map_[i] = &types_.back();
+    } else if (!isDefault) {
       messages_.Say(parser::Message{lo,
           parser::MessageFormattedText{
               "More than one implicit type specified for '%c'"_err_en_US,
@@ -279,24 +276,11 @@ void ImplicitRules::SetType(
 }
 
 void ImplicitRules::ApplyDefaultRules() {
-  types_.push_back(DeclTypeSpec::MakeIntrinsic(IntegerTypeSpec::Make()));
-  int integerT = types_.size();
-  int lo = CharToIndex('i');
-  int hi = CharToIndex('n');
-  for (int i = lo; i <= hi; ++i) {
-    if (map_[i] == 0) {
-      map_[i] = integerT;
-    }
-  }
-  types_.push_back(DeclTypeSpec::MakeIntrinsic(RealTypeSpec::Make()));
-  int realT = types_.size();
-  for (int i = 0; i < CHARS_TOTAL; ++i) {
-    if (map_[i] == 0) {
-      map_[i] = realT;
-    }
-  }
+  SetType(DeclTypeSpec::MakeIntrinsic(IntegerTypeSpec::Make()), "i", "n", true);
+  SetType(DeclTypeSpec::MakeIntrinsic(RealTypeSpec::Make()), "a", "z", true);
 }
 
+// Map 'a'-'z' to 0-25, others to -1
 int ImplicitRules::CharToIndex(char ch) {
   if (ch >= 'a' && ch <= 'i') {
     return ch - 'a';
@@ -309,6 +293,7 @@ int ImplicitRules::CharToIndex(char ch) {
   }
 }
 
+// Map 0-25 to 'a'-'z', others to 0
 char ImplicitRules::IndexToChar(int i) {
   if (i < 0 || i > 25) {
     return 0;
@@ -323,10 +308,10 @@ char ImplicitRules::IndexToChar(int i) {
 
 std::ostream &operator<<(std::ostream &o, const ImplicitRules &implicitRules) {
   o << "ImplicitRules:\n";
-  for (unsigned t{1}; t <= implicitRules.types_.size(); ++t) {
-    o << "  " << implicitRules.types_[t-1] << ':';
+  for (const auto &type : implicitRules.types_) {
+    o << "  " << type << ':';
     for (int i{0}; i < ImplicitRules::CHARS_TOTAL; ++i) {
-      if (implicitRules.map_[i] == t) {
+      if (implicitRules.map_[i] == &type) {
         o << ' ' << ImplicitRules::IndexToChar(i);
       }
     }
@@ -334,7 +319,6 @@ std::ostream &operator<<(std::ostream &o, const ImplicitRules &implicitRules) {
   }
   return o;
 }
-
 
 // AttrsVisitor implementation
 
@@ -479,9 +463,7 @@ KindParamValue DeclTypeSpecVisitor::GetKindParamValue(
 
 // MessageHandler implementation
 
-void MessageHandler::Say(Message &&x) {
-  messages_.Put(std::move(x));
-}
+void MessageHandler::Say(Message &&x) { messages_.Put(std::move(x)); }
 
 void MessageHandler::Say(parser::MessageFixedText &&x) {
   CHECK(currStmtSource_);
@@ -540,9 +522,6 @@ void ImplicitRulesVisitor::Post(const parser::ImplicitPart &) {
   if (!prevImplicitNoneType_) {
     implicitRules_->ApplyDefaultRules();
   }
-  // TODO: this is temporary
-  std::cerr << "End of ImplicitPart\n";
-  std::cerr << *implicitRules_;
 }
 
 bool ImplicitRulesVisitor::Pre(const parser::ImplicitSpec &) {
@@ -562,9 +541,7 @@ void ImplicitRulesVisitor::StartScope() {
   prevParameterStmt_ = nullptr;
 }
 
-void ImplicitRulesVisitor::EndScope() {
-  implicitRules_.reset();
-}
+void ImplicitRulesVisitor::EndScope() { implicitRules_.reset(); }
 
 // TODO: for all of these errors, reference previous statement too
 bool ImplicitRulesVisitor::HandleImplicitNone(
@@ -644,8 +621,7 @@ void ResolveNamesVisitor::Post(const parser::EntityDecl &x) {
   } else {
     Say(parser::Message{name.source.begin(),
         parser::MessageFormattedText{
-            "'%s' is already declared"_err_en_US,
-            name.ToString().c_str()}});
+            "'%s' is already declared"_err_en_US, name.ToString().c_str()}});
   }
 }
 
