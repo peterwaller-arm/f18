@@ -30,7 +30,6 @@ public:
     return *this;
   }
 
-  bool empty() const { return bytes_ == 0; }
   std::size_t size() const { return bytes_; }
 
   void clear() {
@@ -66,14 +65,14 @@ public:
       return *this;
     }
     const char &operator*() const { return block_->data[offset_]; }
-    iterator &operator++(/*++prefix*/) {
+    iterator &operator++() {
       if (++offset_ == Block::capacity) {
         ++block_;
         offset_ = 0;
       }
       return *this;
     }
-    iterator operator++(int /*postfix++*/) {
+    iterator operator++(int) {
       iterator result{*this};
       ++*this;
       return result;

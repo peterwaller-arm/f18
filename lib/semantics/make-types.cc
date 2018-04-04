@@ -49,91 +49,91 @@ public:
   }
   bool Pre(const parser::AccessSpec &x) {
     switch (x.v) {
-    case parser::AccessSpec::Kind::Public: attrs_->set(Attr::PUBLIC); break;
-    case parser::AccessSpec::Kind::Private: attrs_->set(Attr::PRIVATE); break;
+    case parser::AccessSpec::Kind::Public: attrs_->Set(Attr::PUBLIC); break;
+    case parser::AccessSpec::Kind::Private: attrs_->Set(Attr::PRIVATE); break;
     default: CRASH_NO_CASE;
     }
     return false;
   }
   bool Pre(const parser::TypeAttrSpec::BindC &x) {
-    attrs_->set(Attr::BIND_C);
+    attrs_->Set(Attr::BIND_C);
     return false;
   }
   bool Pre(const parser::Abstract &x) {
-    attrs_->set(Attr::ABSTRACT);
+    attrs_->Set(Attr::ABSTRACT);
     return false;
   }
   bool Pre(const parser::Allocatable &) {
-    attrs_->set(Attr::ALLOCATABLE);
+    attrs_->Set(Attr::ALLOCATABLE);
     return false;
   }
   bool Pre(const parser::Asynchronous &) {
-    attrs_->set(Attr::ASYNCHRONOUS);
+    attrs_->Set(Attr::ASYNCHRONOUS);
     return false;
   }
   bool Pre(const parser::Contiguous &) {
-    attrs_->set(Attr::CONTIGUOUS);
+    attrs_->Set(Attr::CONTIGUOUS);
     return false;
   }
   bool Pre(const parser::External &) {
-    attrs_->set(Attr::EXTERNAL);
+    attrs_->Set(Attr::EXTERNAL);
     return false;
   }
   bool Pre(const parser::Intrinsic &) {
-    attrs_->set(Attr::INTRINSIC);
+    attrs_->Set(Attr::INTRINSIC);
     return false;
   }
   bool Pre(const parser::NoPass &) {
-    attrs_->set(Attr::NOPASS);
+    attrs_->Set(Attr::NOPASS);
     return false;
   }
   bool Pre(const parser::Optional &) {
-    attrs_->set(Attr::OPTIONAL);
+    attrs_->Set(Attr::OPTIONAL);
     return false;
   }
   bool Pre(const parser::Parameter &) {
-    attrs_->set(Attr::PARAMETER);
+    attrs_->Set(Attr::PARAMETER);
     return false;
   }
   bool Pre(const parser::Pass &) {
-    attrs_->set(Attr::PASS);
+    attrs_->Set(Attr::PASS);
     return false;
   }
   bool Pre(const parser::Pointer &) {
-    attrs_->set(Attr::POINTER);
+    attrs_->Set(Attr::POINTER);
     return false;
   }
   bool Pre(const parser::Protected &) {
-    attrs_->set(Attr::PROTECTED);
+    attrs_->Set(Attr::PROTECTED);
     return false;
   }
   bool Pre(const parser::Save &) {
-    attrs_->set(Attr::SAVE);
+    attrs_->Set(Attr::SAVE);
     return false;
   }
   bool Pre(const parser::Target &) {
-    attrs_->set(Attr::TARGET);
+    attrs_->Set(Attr::TARGET);
     return false;
   }
   bool Pre(const parser::Value &) {
-    attrs_->set(Attr::VALUE);
+    attrs_->Set(Attr::VALUE);
     return false;
   }
   bool Pre(const parser::Volatile &) {
-    attrs_->set(Attr::VOLATILE);
+    attrs_->Set(Attr::VOLATILE);
     return false;
   }
   bool Pre(const parser::IntentSpec &x) {
     switch (x.v) {
     case parser::IntentSpec::Intent::In:
-      attrs_->set(Attr::INTENT_IN);
+      attrs_->Set(Attr::INTENT_IN);
       break;
     case parser::IntentSpec::Intent::Out:
-      attrs_->set(Attr::INTENT_OUT);
+      attrs_->Set(Attr::INTENT_OUT);
       break;
     case parser::IntentSpec::Intent::InOut:
-      attrs_->set(Attr::INTENT_IN);
-      attrs_->set(Attr::INTENT_OUT);
+      attrs_->Set(Attr::INTENT_IN);
+      attrs_->Set(Attr::INTENT_OUT);
       break;
     default: CRASH_NO_CASE;
     }
@@ -291,7 +291,7 @@ public:
   void Post(const parser::DerivedTypeStmt &x) {
     builder_->name(std::get<parser::Name>(x.t).ToString());
     builder_->attrs(*attrs_);
-    attrs_.release();
+    attrs_.reset();
   }
 
   void Post(const parser::Program &) {
@@ -315,9 +315,10 @@ private:
 
 };
 
-void MakeTypes(std::ostream &out, const parser::Program &program) {
-  void ResolveNames(const parser::Program &program);
-  ResolveNames(program);
+void MakeTypes(
+    const parser::Program &program, const parser::CookedSource &cookedSource) {
+  void ResolveNames(const parser::Program &, const parser::CookedSource &);
+  ResolveNames(program, cookedSource);
 }
 
 static KindParamValue GetKindParamValue(

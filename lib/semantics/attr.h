@@ -2,13 +2,13 @@
 #define FORTRAN_ATTR_H_
 
 #include "../parser/idioms.h"
-#include "enum-set.h"
 #include <cinttypes>
 #include <iostream>
 #include <string>
 
 namespace Fortran {
 namespace semantics {
+
 
 // All available attributes.
 ENUM_CLASS(Attr, ABSTRACT, ALLOCATABLE, ASYNCHRONOUS, BIND_C, CONTIGUOUS,
@@ -18,26 +18,29 @@ ENUM_CLASS(Attr, ABSTRACT, ALLOCATABLE, ASYNCHRONOUS, BIND_C, CONTIGUOUS,
     VOLATILE)
 
 // Set of attributes
-class Attrs : public EnumSet<Attr, Attr_enumSize> {
-private:
-  using enumSetType = EnumSet<Attr, Attr_enumSize>;
+class Attrs {
 public:
-  using enumSetType::enumSetType;
-  constexpr bool HasAny(const Attrs &x) const {
-    return !(*this & x).none();
-  }
-  constexpr bool HasAll(const Attrs &x) const {
-    return (~*this & x).none();
-  }
+  static const Attrs EMPTY;
+  Attrs() : bits_{0} {}
+  Attrs(std::initializer_list<Attr> attrs);
+  bool empty() const { return bits_ == 0; }
+  Attrs &Set(Attr attr);
+  Attrs &Add(const Attrs &attrs);
+  bool Has(Attr attr) const;
+  bool HasAny(const Attrs &attrs) const;
+  bool HasAll(const Attrs &attrs) const;
   // Internal error if any of these attributes are not in allowed.
   void CheckValid(const Attrs &allowed) const;
 
 private:
+  std::uint64_t bits_;
   friend std::ostream &operator<<(std::ostream &, const Attrs &);
 };
 
 std::ostream &operator<<(std::ostream &o, Attr attr);
 std::ostream &operator<<(std::ostream &o, const Attrs &attrs);
+
 }  // namespace semantics
 }  // namespace Fortran
+
 #endif
