@@ -17,7 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace Fortran::common {
+namespace Fortran::parser {
 
 [[noreturn]] void die(const char *msg, ...) {
   va_list ap;
@@ -46,4 +46,5 @@ std::string EnumIndexToString(int index, const char *enumNames) {
   }
   return std::string(p, q - p);
 }
-}  // namespace Fortran::common
+
+}  // namespace Fortran::parser

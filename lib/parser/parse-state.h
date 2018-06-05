@@ -22,11 +22,9 @@
 // and recovery during parsing!
 
 #include "characters.h"
-#include "features.h"
+#include "idioms.h"
 #include "message.h"
 #include "provenance.h"
-#include "user-state.h"
-#include "../common/idioms.h"
 #include <cstddef>
 #include <cstring>
 #include <list>
@@ -36,6 +34,8 @@
 
 namespace Fortran::parser {
 
+class UserState;
+
 class ParseState {
 public:
   // TODO: Add a constructor for parsing a normalized module file.
@@ -44,41 +44,47 @@ public:
   ParseState(const ParseState &that)
     : p_{that.p_}, limit_{that.limit_}, context_{that.context_},
       userState_{that.userState_}, inFixedForm_{that.inFixedForm_},
-      encoding_{that.encoding_}, anyErrorRecovery_{that.anyErrorRecovery_},
+      encoding_{that.encoding_}, strictConformance_{that.strictConformance_},
+      warnOnNonstandardUsage_{that.warnOnNonstandardUsage_},
+      warnOnDeprecatedUsage_{that.warnOnDeprecatedUsage_},
+      anyErrorRecovery_{that.anyErrorRecovery_},
       anyConformanceViolation_{that.anyConformanceViolation_},
-      deferMessages_{that.deferMessages_},
-      anyDeferredMessages_{that.anyDeferredMessages_},
-      tokensMatched_{that.tokensMatched_} {}
+      deferMessages_{that.deferMessages_}, anyDeferredMessages_{
+                                               that.anyDeferredMessages_} {}
   ParseState(ParseState &&that)
     : p_{that.p_}, limit_{that.limit_}, messages_{std::move(that.messages_)},
       context_{std::move(that.context_)}, userState_{that.userState_},
       inFixedForm_{that.inFixedForm_}, encoding_{that.encoding_},
+      strictConformance_{that.strictConformance_},
+      warnOnNonstandardUsage_{that.warnOnNonstandardUsage_},
+      warnOnDeprecatedUsage_{that.warnOnDeprecatedUsage_},
       anyErrorRecovery_{that.anyErrorRecovery_},
       anyConformanceViolation_{that.anyConformanceViolation_},
-      deferMessages_{that.deferMessages_},
-      anyDeferredMessages_{that.anyDeferredMessages_},
-      tokensMatched_{that.tokensMatched_} {}
+      deferMessages_{that.deferMessages_}, anyDeferredMessages_{
+                                               that.anyDeferredMessages_} {}
   ParseState &operator=(const ParseState &that) {
     p_ = that.p_, limit_ = that.limit_, context_ = that.context_;
     userState_ = that.userState_, inFixedForm_ = that.inFixedForm_;
-    encoding_ = that.encoding_;
+    encoding_ = that.encoding_, strictConformance_ = that.strictConformance_;
+    warnOnNonstandardUsage_ = that.warnOnNonstandardUsage_;
+    warnOnDeprecatedUsage_ = that.warnOnDeprecatedUsage_;
     anyErrorRecovery_ = that.anyErrorRecovery_;
     anyConformanceViolation_ = that.anyConformanceViolation_;
     deferMessages_ = that.deferMessages_;
     anyDeferredMessages_ = that.anyDeferredMessages_;
-    tokensMatched_ = that.tokensMatched_;
     return *this;
   }
   ParseState &operator=(ParseState &&that) {
     p_ = that.p_, limit_ = that.limit_, messages_ = std::move(that.messages_);
     context_ = std::move(that.context_);
     userState_ = that.userState_, inFixedForm_ = that.inFixedForm_;
-    encoding_ = that.encoding_;
+    encoding_ = that.encoding_, strictConformance_ = that.strictConformance_;
+    warnOnNonstandardUsage_ = that.warnOnNonstandardUsage_;
+    warnOnDeprecatedUsage_ = that.warnOnDeprecatedUsage_;
     anyErrorRecovery_ = that.anyErrorRecovery_;
     anyConformanceViolation_ = that.anyConformanceViolation_;
     deferMessages_ = that.deferMessages_;
     anyDeferredMessages_ = that.anyDeferredMessages_;
-    tokensMatched_ = that.tokensMatched_;
     return *this;
   }
 
@@ -101,8 +107,26 @@ public:
   }
 
   bool inFixedForm() const { return inFixedForm_; }
-  ParseState &set_inFixedForm(bool yes = true) {
+  ParseState &set_inFixedForm(bool yes) {
     inFixedForm_ = yes;
+    return *this;
+  }
+
+  bool strictConformance() const { return strictConformance_; }
+  ParseState &set_strictConformance(bool yes) {
+    strictConformance_ = yes;
+    return *this;
+  }
+
+  bool warnOnNonstandardUsage() const { return warnOnNonstandardUsage_; }
+  ParseState &set_warnOnNonstandardUsage(bool yes) {
+    warnOnNonstandardUsage_ = yes;
+    return *this;
+  }
+
+  bool warnOnDeprecatedUsage() const { return warnOnDeprecatedUsage_; }
+  ParseState &set_warnOnDeprecatedUsage(bool yes) {
+    warnOnDeprecatedUsage_ = yes;
     return *this;
   }
 
@@ -113,38 +137,26 @@ public:
   }
 
   bool deferMessages() const { return deferMessages_; }
-  ParseState &set_deferMessages(bool yes = true) {
+  ParseState &set_deferMessages(bool yes) {
     deferMessages_ = yes;
     return *this;
   }
 
   bool anyDeferredMessages() const { return anyDeferredMessages_; }
-  ParseState &set_anyDeferredMessages(bool yes = true) {
-    anyDeferredMessages_ = yes;
-    return *this;
-  }
-
-  std::size_t tokensMatched() const { return tokensMatched_; }
-  ParseState &set_tokensMatched(std::size_t n) {
-    tokensMatched_ = n;
-    return *this;
-  }
-  ParseState &TokenMatched() {
-    ++tokensMatched_;
-    return *this;
-  }
+  void set_anyDeferredMessages() { anyDeferredMessages_ = true; }
 
   const char *GetLocation() const { return p_; }
 
   void PushContext(MessageFixedText text) {
-    auto m{new Message{p_, text}};  // reference-counted
+    auto m = new Message{p_, text};  // reference-counted
     m->SetContext(context_.get());
     context_ = Message::Reference{m};
   }
 
   void PopContext() {
-    CHECK(context_);
-    context_ = context_->attachment();
+    if (context_) {
+      context_ = context_->attachment();
+    }
   }
 
   void Say(const MessageFixedText &t) { Say(p_, t); }
@@ -171,24 +183,6 @@ public:
     } else {
       messages_.Say(range, t).SetContext(context_.get());
     }
-  }
-
-  void Nonstandard(LanguageFeature lf, const MessageFixedText &msg) {
-    Nonstandard(p_, lf, msg);
-  }
-  void Nonstandard(
-      CharBlock range, LanguageFeature lf, const MessageFixedText &msg) {
-    anyConformanceViolation_ = true;
-    if (userState_ != nullptr && userState_->features().ShouldWarn(lf)) {
-      Say(range, msg);
-    }
-  }
-  bool IsNonstandardOk(LanguageFeature lf, const MessageFixedText &msg) {
-    if (userState_ != nullptr && !userState_->features().IsEnabled(lf)) {
-      return false;
-    }
-    Nonstandard(lf, msg);
-    return true;
   }
 
   bool IsAtEnd() const { return p_ >= limit_; }
@@ -230,11 +224,13 @@ private:
 
   bool inFixedForm_{false};
   Encoding encoding_{Encoding::UTF8};
+  bool strictConformance_{false};
+  bool warnOnNonstandardUsage_{false};
+  bool warnOnDeprecatedUsage_{false};
   bool anyErrorRecovery_{false};
   bool anyConformanceViolation_{false};
   bool deferMessages_{false};
   bool anyDeferredMessages_{false};
-  std::size_t tokensMatched_{0};
   // NOTE: Any additions or modifications to these data members must also be
   // reflected in the copy and move constructors defined at the top of this
   // class definition!

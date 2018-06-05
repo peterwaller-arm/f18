@@ -15,16 +15,13 @@
 
 add_library(FlangSemantics
   attr.cc
-  mod-file.cc
   resolve-names.cc
   rewrite-parse-tree.cc
   scope.cc
   symbol.cc
   type.cc
-  unparse-with-symbols.cc
 )
 
-target_link_libraries(FlangSemantics
-  FortranCommon
-  clangBasic
+target_link_libraries( FlangSemantics
+  clangBasic                    
 )

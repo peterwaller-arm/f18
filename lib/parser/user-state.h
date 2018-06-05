@@ -20,10 +20,9 @@
 // parse tree construction so as to avoid any need for representing
 // state in static data.
 
+#include "basic-parsers.h"
 #include "char-block.h"
-#include "features.h"
 #include "parse-tree.h"
-#include "../common/idioms.h"
 #include <cinttypes>
 #include <optional>
 #include <ostream>
@@ -36,15 +35,11 @@ class CookedSource;
 class ParsingLog;
 class ParseState;
 
-class Success {};  // for when one must return something that's present
-
 class UserState {
 public:
-  UserState(const CookedSource &cooked, LanguageFeatureControl features)
-    : cooked_{cooked}, features_{features} {}
+  explicit UserState(const CookedSource &cooked) : cooked_{cooked} {}
 
   const CookedSource &cooked() const { return cooked_; }
-  const LanguageFeatureControl &features() const { return features_; }
 
   std::ostream *debugOutput() const { return debugOutput_; }
   UserState &set_debugOutput(std::ostream *out) {
@@ -105,8 +100,6 @@ private:
   int nonlabelDoConstructNestingDepth_{0};
 
   std::set<CharBlock> oldStructureComponents_;
-
-  LanguageFeatureControl features_;
 };
 
 // Definitions of parser classes that manipulate the UserState.
@@ -116,12 +109,12 @@ struct StartNewSubprogram {
 };
 
 struct CapturedLabelDoStmt {
-  using resultType = Statement<common::Indirection<LabelDoStmt>>;
+  using resultType = Statement<Indirection<LabelDoStmt>>;
   static std::optional<resultType> Parse(ParseState &);
 };
 
 struct EndDoStmtForCapturedLabelDoStmt {
-  using resultType = Statement<common::Indirection<EndDoStmt>>;
+  using resultType = Statement<Indirection<EndDoStmt>>;
   static std::optional<resultType> Parse(ParseState &);
 };
 

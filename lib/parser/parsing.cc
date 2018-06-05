@@ -63,12 +63,15 @@ void Parsing::Prescan(const std::string &path, Options options) {
       preprocessor.Undefine(predef.first);
     }
   }
-  Prescanner prescanner{messages_, cooked_, preprocessor, options.features};
+  Prescanner prescanner{messages_, cooked_, preprocessor};
   prescanner.set_fixedForm(options.isFixedForm)
       .set_fixedFormColumnLimit(options.fixedFormColumns)
       .set_encoding(options.encoding)
+      .set_enableBackslashEscapesInCharLiterals(options.enableBackslashEscapes)
+      .set_enableOldDebugLines(options.enableOldDebugLines)
+      .set_warnOnNonstandardUsage(options_.isStrictlyStandard)
       .AddCompilerDirectiveSentinel("dir$");
-  if (options.features.IsEnabled(LanguageFeature::OpenMP)) {
+  if (options.enableOpenMP) {
     prescanner.AddCompilerDirectiveSentinel("$omp");
   }
   ProvenanceRange range{
@@ -78,7 +81,7 @@ void Parsing::Prescan(const std::string &path, Options options) {
 }
 
 void Parsing::DumpCookedChars(std::ostream &out) const {
-  UserState userState{cooked_, LanguageFeatureControl{}};
+  UserState userState{cooked_};
   ParseState parseState{cooked_};
   parseState.set_inFixedForm(options_.isFixedForm).set_userState(&userState);
   while (std::optional<const char *> p{parseState.GetNextChar()}) {
@@ -93,13 +96,15 @@ void Parsing::DumpParsingLog(std::ostream &out) const {
 }
 
 void Parsing::Parse(std::ostream *out) {
-  UserState userState{cooked_, options_.features};
+  UserState userState{cooked_};
   userState.set_debugOutput(out)
       .set_instrumentedParse(options_.instrumentedParse)
       .set_log(&log_);
   ParseState parseState{cooked_};
   parseState.set_inFixedForm(options_.isFixedForm)
       .set_encoding(options_.encoding)
+      .set_warnOnNonstandardUsage(options_.isStrictlyStandard)
+      .set_warnOnDeprecatedUsage(options_.isStrictlyStandard)
       .set_userState(&userState);
   parseTree_ = program.Parse(parseState);
   CHECK(

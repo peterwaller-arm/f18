@@ -17,7 +17,7 @@
 
 #include "attr.h"
 #include "symbol.h"
-#include "../common/idioms.h"
+#include "../parser/idioms.h"
 #include "../parser/parse-tree.h"
 #include <list>
 #include <map>
@@ -26,26 +26,18 @@
 namespace Fortran::semantics {
 
 class Scope {
-  using mapType = std::map<SourceName, Symbol *>;
+  using mapType = std::map<SourceName, Symbol>;
 
 public:
   // root of the scope tree; contains intrinsics:
-  static Scope systemScope;
+  static const Scope systemScope;
   static Scope globalScope;  // contains program-units
 
-  ENUM_CLASS(Kind, System, Global, Module, MainProgram, Subprogram, DerivedType)
+  ENUM_CLASS(Kind, System, Global, Module, MainProgram, Subprogram)
 
-  Scope(Scope &parent, Kind kind, Symbol *symbol)
-    : parent_{parent}, kind_{kind}, symbol_{symbol} {
-    if (symbol) {
-      symbol->set_scope(this);
-    }
-  }
+  Scope(const Scope &parent, Kind kind, Symbol *symbol)
+    : parent_{parent}, kind_{kind}, symbol_{symbol} {}
 
-  Scope &parent() {
-    CHECK(kind_ != Kind::System);
-    return parent_;
-  }
   const Scope &parent() const {
     CHECK(kind_ != Kind::System);
     return parent_;
@@ -73,9 +65,12 @@ public:
   const_iterator cbegin() const { return symbols_.cbegin(); }
   const_iterator cend() const { return symbols_.cend(); }
 
-  iterator find(const SourceName &name);
-  const_iterator find(const SourceName &name) const;
-  size_type erase(const SourceName &);
+  iterator find(const SourceName &name) { return symbols_.find(name); }
+  const_iterator find(const SourceName &name) const {
+    return symbols_.find(name);
+  }
+
+  size_type erase(const SourceName &name) { return symbols_.erase(name); }
 
   /// Make a Symbol with unknown details.
   std::pair<iterator, bool> try_emplace(
@@ -91,32 +86,18 @@ public:
   template<typename D>
   std::pair<iterator, bool> try_emplace(
       const SourceName &name, Attrs attrs, D &&details) {
-    Symbol &symbol{MakeSymbol(name, attrs, std::move(details))};
-    return symbols_.insert(std::make_pair(name, &symbol));
-  }
-
-  /// Make a Symbol but don't add it to the scope.
-  template<typename D>
-  Symbol &MakeSymbol(const SourceName &name, Attrs attrs, D &&details) {
-    return allSymbols.Make(*this, name, attrs, std::move(details));
+    return symbols_.try_emplace(name, *this, name, attrs, details);
   }
 
   std::list<Scope> &children() { return children_; }
   const std::list<Scope> &children() const { return children_; }
 
-  DerivedTypeSpec &MakeDerivedTypeSpec(const SourceName &);
-
 private:
-  Scope &parent_;
+  const Scope &parent_;
   const Kind kind_;
   Symbol *const symbol_;
   std::list<Scope> children_;
   mapType symbols_;
-  std::list<DerivedTypeSpec> derivedTypeSpecs_;
-
-  // Storage for all Symbols. Every Symbol is in allSymbols and every Symbol*
-  // or Symbol& points to one in there.
-  static Symbols<1024> allSymbols;
 
   friend std::ostream &operator<<(std::ostream &, const Scope &);
 };

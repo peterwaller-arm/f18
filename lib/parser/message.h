@@ -20,9 +20,9 @@
 
 #include "char-block.h"
 #include "char-set.h"
+#include "idioms.h"
 #include "provenance.h"
-#include "../common/idioms.h"
-#include "../common/reference-counted.h"
+#include "reference-counted.h"
 #include <cstddef>
 #include <cstring>
 #include <forward_list>
@@ -102,9 +102,9 @@ private:
   std::variant<CharBlock, SetOfChars> u_;
 };
 
-class Message : public common::ReferenceCounted<Message> {
+class Message : public ReferenceCounted<Message> {
 public:
-  using Reference = common::CountedReference<Message>;
+  using Reference = CountedReference<Message>;
 
   Message(const Message &) = default;
   Message(Message &&) = default;
@@ -204,8 +204,9 @@ public:
   bool AnyFatalError() const;
 
 private:
-  std::forward_list<Message> messages_;
-  std::forward_list<Message>::iterator last_{messages_.before_begin()};
+  using listType = std::forward_list<Message>;
+  listType messages_;
+  listType::iterator last_{messages_.before_begin()};
 };
 
 }  // namespace Fortran::parser

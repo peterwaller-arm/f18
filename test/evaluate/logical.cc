@@ -16,13 +16,14 @@
 #include "../../lib/evaluate/type.h"
 #include <cstdio>
 
+using namespace Fortran::evaluate::type;
+
 template<int KIND> void testKind() {
-  using Type =
-      Fortran::evaluate::Type<Fortran::evaluate::Category::Logical, KIND>;
-  TEST(Type::category == Fortran::evaluate::Category::Logical);
+  using Type = Logical<KIND>;
+  TEST(Type::classification == Classification::Logical);
   TEST(Type::kind == KIND);
   TEST(!Type::hasLen);
-  using Value = typename Type::Value;
+  using Value = typename Type::ValueType;
   MATCH(8 * KIND, Value::bits);
   TEST(!Value{}.IsTrue());
   TEST(!Value{false}.IsTrue());

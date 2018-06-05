@@ -17,7 +17,7 @@
 
 // Describes a contiguous block of characters; does not own their storage.
 
-#include "../common/interval.h"
+#include "interval.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
@@ -85,7 +85,7 @@ private:
     return size() < that.size() ? -1 : size() > that.size();
   }
 
-  common::Interval<const char *> interval_{nullptr, 0};
+  Interval<const char *> interval_{nullptr, 0};
 };
 
 }  // namespace Fortran::parser

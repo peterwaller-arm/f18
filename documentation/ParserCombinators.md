@@ -88,11 +88,7 @@ They are `constexpr`, so they should be viewed as type-safe macros.
    or with a warning if nonstandard usage warnings are enabled.
 * `deprecated(p)` parses p if strict standard compliance is disabled,
   with a warning if deprecated usage warnings are enabled.
-* `inContext(msg, p)` runs p within an error message context; any
-  message that `p` generates will be tagged with `msg` as its
-  context.  Contexts may nest.
-* `withMessage(msg, p)` succeeds if `p` does, and if it does not,
-  it discards the messages from `p` and fails with the specified message.
+* `inContext(..., p)` runs p within an error message context.
 * `recovery(p, q)` is equivalent to `p || q`, except that error messages
   generated from the first parser are retained, and a flag is set in
   the ParseState to remember that error recovery was necessary.

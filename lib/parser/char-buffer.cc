@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "char-buffer.h"
-#include "../common/idioms.h"
+#include "idioms.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstring>

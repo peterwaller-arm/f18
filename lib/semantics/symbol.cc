@@ -14,7 +14,7 @@
 
 #include "symbol.h"
 #include "scope.h"
-#include "../common/idioms.h"
+#include "../parser/idioms.h"
 #include <memory>
 
 namespace Fortran::semantics {
@@ -44,7 +44,7 @@ void ObjectEntityDetails::set_shape(const ArraySpec &shape) {
 }
 
 ProcEntityDetails::ProcEntityDetails(const EntityDetails &d) {
-  if (auto type{d.type()}) {
+  if (auto &type = d.type()) {
     interface_.set_type(*type);
   }
 }
@@ -60,23 +60,20 @@ GenericDetails::GenericDetails(const listType &specificProcs) {
   }
 }
 
-void GenericDetails::set_specific(Symbol &specific) {
+void GenericDetails::set_specific(Symbol &&specific) {
   CHECK(!specific_);
-  specific_ = &specific;
-}
-void GenericDetails::set_derivedType(Symbol &derivedType) {
-  CHECK(!derivedType_);
-  derivedType_ = &derivedType;
+  specific_ = std::unique_ptr<Symbol>(new Symbol(std::move(specific)));
 }
 
 const Symbol *GenericDetails::CheckSpecific() const {
-  if (specific_) {
+  if (const auto *specific = specific_.get()) {
     for (const auto *proc : specificProcs_) {
-      if (proc == specific_) {
+      if (proc == specific) {
         return nullptr;
       }
     }
-    return specific_;
+    std::cerr << "specific: " << *specific << "\n";
+    return specific;
   } else {
     return nullptr;
   }
@@ -84,9 +81,9 @@ const Symbol *GenericDetails::CheckSpecific() const {
 
 // The name of the kind of details for this symbol.
 // This is primarily for debugging.
-std::string DetailsToString(const Details &details) {
+static std::string DetailsToString(const Details &details) {
   return std::visit(
-      common::visitors{
+      parser::visitors{
           [](const UnknownDetails &) { return "Unknown"; },
           [](const MainProgramDetails &) { return "MainProgram"; },
           [](const ModuleDetails &) { return "Module"; },
@@ -95,7 +92,6 @@ std::string DetailsToString(const Details &details) {
           [](const EntityDetails &) { return "Entity"; },
           [](const ObjectEntityDetails &) { return "ObjectEntity"; },
           [](const ProcEntityDetails &) { return "ProcEntity"; },
-          [](const DerivedTypeDetails &) { return "DerivedType"; },
           [](const UseDetails &) { return "Use"; },
           [](const UseErrorDetails &) { return "UseError"; },
           [](const GenericDetails &) { return "Generic"; },
@@ -118,7 +114,7 @@ bool Symbol::CanReplaceDetails(const Details &details) const {
     return true;  // can always replace UnknownDetails
   } else {
     return std::visit(
-        common::visitors{
+        parser::visitors{
             [](const UseErrorDetails &) { return true; },
             [=](const ObjectEntityDetails &) { return has<EntityDetails>(); },
             [=](const ProcEntityDetails &) { return has<EntityDetails>(); },
@@ -131,62 +127,20 @@ bool Symbol::CanReplaceDetails(const Details &details) const {
   }
 }
 
-void Symbol::add_occurrence(const SourceName &name) {
-  if (occurrences_.back().begin() != name.begin()) {
-    occurrences_.push_back(name);
-  }
-}
-void Symbol::remove_occurrence(const SourceName &name) {
-  auto end{occurrences_.end()};
-  for (auto it{occurrences_.begin()}; it != end; ++it) {
-    if (it->begin() == name.begin()) {
-      occurrences_.erase(it);
-      return;
-    }
-  }
-}
 Symbol &Symbol::GetUltimate() {
   return const_cast<Symbol &>(static_cast<const Symbol *>(this)->GetUltimate());
 }
 const Symbol &Symbol::GetUltimate() const {
-  if (const auto *details{detailsIf<UseDetails>()}) {
+  if (const auto *details = detailsIf<UseDetails>()) {
     return details->symbol().GetUltimate();
   } else {
     return *this;
   }
 }
 
-const DeclTypeSpec *Symbol::GetType() const {
-  return std::visit(
-      common::visitors{
-          [](const EntityDetails &x) {
-            return x.type().has_value() ? &x.type().value() : nullptr;
-          },
-          [](const ObjectEntityDetails &x) {
-            return x.type().has_value() ? &x.type().value() : nullptr;
-          },
-          [](const ProcEntityDetails &x) { return x.interface().type(); },
-          [](const auto &) {
-            return static_cast<const DeclTypeSpec *>(nullptr);
-          },
-      },
-      details_);
-}
-
-void Symbol::SetType(const DeclTypeSpec &type) {
-  std::visit(
-      common::visitors{
-          [&](EntityDetails &x) { x.set_type(type); },
-          [&](ObjectEntityDetails &x) { x.set_type(type); },
-          [&](ProcEntityDetails &x) { x.interface().set_type(type); },
-          [](auto &) {},
-      },
-      details_);
-}
-
 bool Symbol::isSubprogram() const {
   return std::visit(
-      common::visitors{
+      parser::visitors{
           [](const SubprogramDetails &) { return true; },
           [](const SubprogramNameDetails &) { return true; },
           [](const GenericDetails &) { return true; },
@@ -198,7 +152,7 @@ bool Symbol::isSubprogram() const {
 
 bool Symbol::HasExplicitInterface() const {
   return std::visit(
-      common::visitors{
+      parser::visitors{
           [](const SubprogramDetails &) { return true; },
           [](const SubprogramNameDetails &) { return true; },
           [](const ProcEntityDetails &x) { return x.HasExplicitInterface(); },
@@ -209,7 +163,11 @@ bool Symbol::HasExplicitInterface() const {
 }
 
 ObjectEntityDetails::ObjectEntityDetails(const EntityDetails &d)
-  : isDummy_{d.isDummy()}, type_{d.type()} {}
+  : isDummy_{d.isDummy()} {
+  if (auto &type = d.type()) {
+    set_type(*type);
+  }
+}
 
 std::ostream &operator<<(std::ostream &os, const EntityDetails &x) {
   if (x.type()) {
@@ -232,28 +190,26 @@ std::ostream &operator<<(std::ostream &os, const ObjectEntityDetails &x) {
 }
 
 bool ProcEntityDetails::HasExplicitInterface() const {
-  if (auto *symbol{interface_.symbol()}) {
+  if (auto *symbol = interface_.symbol()) {
     return symbol->HasExplicitInterface();
   }
   return false;
 }
 
 std::ostream &operator<<(std::ostream &os, const ProcEntityDetails &x) {
-  if (auto *symbol{x.interface_.symbol()}) {
+  if (auto *symbol = x.interface_.symbol()) {
     os << ' ' << symbol->name().ToString();
-  } else if (auto *type{x.interface_.type()}) {
+  } else if (auto *type = x.interface_.type()) {
     os << ' ' << *type;
   }
   return os;
 }
 
-std::ostream &operator<<(std::ostream &os, const DerivedTypeDetails &x) {
-  return os;
-}
-
 static std::ostream &DumpType(std::ostream &os, const Symbol &symbol) {
-  if (const auto *type{symbol.GetType()}) {
-    os << *type << ' ';
+  if (const auto *details = symbol.detailsIf<EntityDetails>()) {
+    if (details->type()) {
+      os << *details->type() << ' ';
+    }
   }
   return os;
 }
@@ -261,7 +217,7 @@ static std::ostream &DumpType(std::ostream &os, const Symbol &symbol) {
 std::ostream &operator<<(std::ostream &os, const Details &details) {
   os << DetailsToString(details);
   std::visit(
-      common::visitors{
+      parser::visitors{
           [&](const UnknownDetails &x) {},
           [&](const MainProgramDetails &x) {},
           [&](const ModuleDetails &x) {},
@@ -289,7 +245,6 @@ std::ostream &operator<<(std::ostream &os, const Details &details) {
           [&](const EntityDetails &x) { os << x; },
           [&](const ObjectEntityDetails &x) { os << x; },
           [&](const ProcEntityDetails &x) { os << x; },
-          [&](const DerivedTypeDetails &x) { os << x; },
           [&](const UseDetails &x) {
             os << " from " << x.symbol().name() << " in " << x.module().name();
           },
@@ -337,41 +292,6 @@ std::ostream &operator<<(std::ostream &os, const Symbol &symbol) {
     os << " (" << symbol.flags() << ')';
   }
   os << ": " << symbol.details_;
-  return os;
-}
-
-// Output a unique name for a scope by qualifying it with the names of
-// parent scopes. For scopes without corresponding symbols, use "ANON".
-static void DumpUniqueName(std::ostream &os, const Scope &scope) {
-  if (&scope != &Scope::globalScope) {
-    DumpUniqueName(os, scope.parent());
-    os << '/';
-    if (auto *scopeSymbol{scope.symbol()}) {
-      os << scopeSymbol->name().ToString();
-    } else {
-      os << "ANON";
-    }
-  }
-}
-
-// Dump a symbol for UnparseWithSymbols. This will be used for tests so the
-// format should be reasonably stable.
-std::ostream &DumpForUnparse(
-    std::ostream &os, const Symbol &symbol, bool isDef) {
-  DumpUniqueName(os, symbol.owner());
-  os << '/' << symbol.name().ToString();
-  if (isDef) {
-    if (!symbol.attrs().empty()) {
-      os << ' ' << symbol.attrs();
-    }
-    if (symbol.test(Symbol::Flag::Implicit)) {
-      os << " (implicit)";
-    }
-    os << ' ' << symbol.GetDetailsName();
-    if (const auto *type{symbol.GetType()}) {
-      os << ' ' << *type;
-    }
-  }
   return os;
 }
 

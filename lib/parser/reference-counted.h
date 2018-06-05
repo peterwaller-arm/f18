@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FORTRAN_COMMON_REFERENCE_COUNTED_H_
-#define FORTRAN_COMMON_REFERENCE_COUNTED_H_
+#ifndef FORTRAN_PARSER_REFERENCE_COUNTED_H_
+#define FORTRAN_PARSER_REFERENCE_COUNTED_H_
 
 // A class template of smart pointers to objects with their own
 // reference counting object lifetimes that's lighter weight
 // than std::shared_ptr<>.  Not thread-safe.
 
-namespace Fortran::common {
+namespace Fortran::parser {
 
-// A base class for reference-counted objects.
 template<typename A> class ReferenceCounted {
 public:
   ReferenceCounted() {}
@@ -36,7 +35,6 @@ private:
   int references_{0};
 };
 
-// A reference to a reference-counted object.
 template<typename A> class CountedReference {
 public:
   using type = A;
@@ -79,5 +77,5 @@ private:
   type *p_{nullptr};
 };
 
-}  // namespace Fortran::common
-#endif  // FORTRAN_COMMON_REFERENCE_COUNTED_H_
+}  // namespace Fortran::parser
+#endif  // FORTRAN_PARSER_REFERENCE_COUNTED_H_

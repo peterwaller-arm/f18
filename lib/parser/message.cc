@@ -14,7 +14,7 @@
 
 #include "message.h"
 #include "char-set.h"
-#include "../common/idioms.h"
+#include "idioms.h"
 #include <algorithm>
 #include <cstdarg>
 #include <cstddef>
@@ -52,11 +52,11 @@ MessageFormattedText::MessageFormattedText(MessageFixedText text, ...)
 
 std::string MessageExpectedText::ToString() const {
   return std::visit(
-      common::visitors{[](const CharBlock &cb) {
-                         return MessageFormattedText("expected '%s'"_err_en_US,
-                             cb.NULTerminatedToString().data())
-                             .MoveString();
-                       },
+      visitors{[](const CharBlock &cb) {
+                 return MessageFormattedText("expected '%s'"_err_en_US,
+                     cb.NULTerminatedToString().data())
+                     .MoveString();
+               },
           [](const SetOfChars &set) {
             SetOfChars expect{set};
             if (expect.Has('\n')) {
@@ -90,10 +90,9 @@ std::string MessageExpectedText::ToString() const {
 }
 
 void MessageExpectedText::Incorporate(const MessageExpectedText &that) {
-  std::visit(common::visitors{[&](SetOfChars &s1, const SetOfChars &s2) {
-                                s1 = s1.Union(s2);
-                              },
-                 [](const auto &, const auto &) {}},
+  std::visit(
+      visitors{[&](SetOfChars &s1, const SetOfChars &s2) { s1 = s1.Union(s2); },
+          [](const auto &, const auto &) {}},
       u_, that.u_);
 }
 
@@ -105,9 +104,9 @@ bool Message::SortBefore(const Message &that) const {
   // are speculative.  Messages with ProvenanceRange locations are ordered
   // before others for sorting.
   return std::visit(
-      common::visitors{[](const CharBlock &cb1, const CharBlock &cb2) {
-                         return cb1.begin() < cb2.begin();
-                       },
+      visitors{[](const CharBlock &cb1, const CharBlock &cb2) {
+                 return cb1.begin() < cb2.begin();
+               },
           [](const CharBlock &, const ProvenanceRange &) { return false; },
           [](const ProvenanceRange &pr1, const ProvenanceRange &pr2) {
             return pr1.start() < pr2.start();
@@ -118,7 +117,7 @@ bool Message::SortBefore(const Message &that) const {
 
 bool Message::IsFatal() const {
   return std::visit(
-      common::visitors{[](const MessageExpectedText &) { return true; },
+      visitors{[](const MessageExpectedText &) { return true; },
           [](const MessageFixedText &x) { return x.isFatal(); },
           [](const MessageFormattedText &x) { return x.isFatal(); }},
       text_);
@@ -126,18 +125,18 @@ bool Message::IsFatal() const {
 
 std::string Message::ToString() const {
   return std::visit(
-      common::visitors{[](const MessageFixedText &t) {
-                         return t.text().NULTerminatedToString();
-                       },
+      visitors{[](const MessageFixedText &t) {
+                 return t.text().NULTerminatedToString();
+               },
           [](const MessageFormattedText &t) { return t.string(); },
           [](const MessageExpectedText &e) { return e.ToString(); }},
       text_);
 }
 
 ProvenanceRange Message::GetProvenanceRange(const CookedSource &cooked) const {
-  return std::visit(common::visitors{[&](const CharBlock &cb) {
-                                       return cooked.GetProvenanceRange(cb);
-                                     },
+  return std::visit(visitors{[&](const CharBlock &cb) {
+                               return cooked.GetProvenanceRange(cb);
+                             },
                         [](const ProvenanceRange &pr) { return pr; }},
       location_);
 }
@@ -174,11 +173,11 @@ void Message::Emit(
 }
 
 void Message::Incorporate(Message &that) {
-  std::visit(common::visitors{[&](MessageExpectedText &e1,
-                                  const MessageExpectedText &e2) {
-                                e1.Incorporate(e2);
-                              },
-                 [](const auto &, const auto &) {}},
+  std::visit(
+      visitors{[&](MessageExpectedText &e1, const MessageExpectedText &e2) {
+                 e1.Incorporate(e2);
+               },
+          [](const auto &, const auto &) {}},
       text_, that.text_);
 }
 
@@ -192,9 +191,9 @@ void Message::Attach(Message *m) {
 
 bool Message::AtSameLocation(const Message &that) const {
   return std::visit(
-      common::visitors{[](const CharBlock &cb1, const CharBlock &cb2) {
-                         return cb1.begin() == cb2.begin();
-                       },
+      visitors{[](const CharBlock &cb1, const CharBlock &cb2) {
+                 return cb1.begin() == cb2.begin();
+               },
           [](const ProvenanceRange &pr1, const ProvenanceRange &pr2) {
             return pr1.start() == pr2.start();
           },

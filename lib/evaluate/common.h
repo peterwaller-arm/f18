@@ -16,15 +16,13 @@
 #define FORTRAN_EVALUATE_COMMON_H_
 
 #include "../common/enum-set.h"
-#include "../common/idioms.h"
-#include "../common/indirection.h"
 #include <cinttypes>
 
 namespace Fortran::evaluate {
 
 // Integers are always ordered; reals may not be.
-ENUM_CLASS(Ordering, Less, Equal, Greater)
-ENUM_CLASS(Relation, Less, Equal, Greater, Unordered)
+enum class Ordering { Less, Equal, Greater };
+enum class Relation { Less, Equal, Greater, Unordered };
 
 static constexpr Ordering CompareUnsigned(std::uint64_t x, std::uint64_t y) {
   if (x < y) {
@@ -66,8 +64,13 @@ static constexpr Relation Reverse(Relation relation) {
   }
 }
 
-ENUM_CLASS(
-    RealFlag, Overflow, DivideByZero, InvalidArgument, Underflow, Inexact)
+enum class RealFlag {
+  Overflow,
+  DivideByZero,
+  InvalidArgument,
+  Underflow,
+  Inexact
+};
 
 using RealFlags = common::EnumSet<RealFlag, 5>;
 
@@ -80,7 +83,7 @@ template<typename A> struct ValueWithRealFlags {
   RealFlags flags;
 };
 
-ENUM_CLASS(Rounding, TiesToEven, ToZero, Down, Up, TiesAwayFromZero)
+enum class Rounding { TiesToEven, ToZero, Down, Up, TiesAwayFromZero };
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 constexpr bool IsHostLittleEndian{false};
@@ -108,21 +111,6 @@ template<> struct SmallestUInt<false, false, false, true> {
 template<int BITS>
 using HostUnsignedInt =
     typename SmallestUInt<BITS <= 8, BITS <= 16, BITS <= 32, BITS <= 64>::type;
-
-// Many classes in this library follow a common paradigm.
-// - There is no default constructor (Class() {}), usually to prevent the
-//   need for std::monostate as a default constituent in a std::variant<>.
-// - There are full copy and move semantics for construction and assignment.
-// - There's a Dump(std::ostream &) member function.
-#define CLASS_BOILERPLATE(t) \
-  t(const t &) = default; \
-  t(t &&) = default; \
-  t &operator=(const t &) = default; \
-  t &operator=(t &&) = default; \
-  std::ostream &Dump(std::ostream &) const;
-
-// Force availability of copy construction and assignment
-template<typename A> using CopyableIndirection = common::Indirection<A, true>;
 
 }  // namespace Fortran::evaluate
 #endif  // FORTRAN_EVALUATE_COMMON_H_
