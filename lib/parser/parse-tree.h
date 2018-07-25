@@ -54,16 +54,11 @@ CLASS_TRAIT(WrapperTrait);
 CLASS_TRAIT(UnionTrait);
 CLASS_TRAIT(TupleTrait);
 
-// Some parse tree nodes have fields in them to cache the results of a
-// successful semantic analysis later.  Their types are forward declared
-// here.
-namespace Fortran::semantics {
+namespace Fortran {
+namespace semantics {
 class Symbol;
-}  // namespace Fortran::semantics
-
-namespace Fortran::evaluate {
-struct GenericExpr;
-}  // namespace Fortran::evaluate
+}  // namespace semantics
+}  // namespace Fortran
 
 // Most non-template classes in this file use these default definitions
 // for their move constructor and move assignment operator=, and disable
@@ -535,7 +530,7 @@ struct Name {
   COPY_AND_ASSIGN_BOILERPLATE(Name);
   std::string ToString() const { return source.ToString(); }
   CharBlock source;
-  semantics::Symbol *symbol{nullptr};  // filled in later by semantic analysis
+  semantics::Symbol *symbol{nullptr};
 };
 
 // R516 keyword -> name

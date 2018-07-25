@@ -303,12 +303,11 @@ const AllSources::Origin &AllSources::MapToOrigin(Provenance at) const {
 }
 
 ProvenanceRange CookedSource::GetProvenanceRange(CharBlock cookedRange) const {
-  ProvenanceRange first{provenanceMap_.Map(cookedRange.begin() - &data_[0])};
-  if (cookedRange.size() <= first.size()) {
-    return first.Prefix(cookedRange.size());
+  ProvenanceRange range{provenanceMap_.Map(cookedRange.begin() - &data_[0])};
+  if (cookedRange.size() < range.size()) {
+    return {range.start(), cookedRange.size()};
   }
-  ProvenanceRange last{provenanceMap_.Map(cookedRange.end() - &data_[0])};
-  return {first.start(), last.start() - first.start()};
+  return range;
 }
 
 void CookedSource::Marshal() {

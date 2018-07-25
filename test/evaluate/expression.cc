@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "../../lib/evaluate/expression.h"
-#include "../../lib/parser/message.h"
 #include "testing.h"
 #include <cstdio>
 #include <cstdlib>
@@ -35,8 +34,7 @@ int main() {
   auto ex1{DefaultIntegerExpr{2} + DefaultIntegerExpr{3} * -DefaultIntegerExpr{4}};
   MATCH("(2+(3*(-4)))", Dump(ex1));
   Fortran::parser::CharBlock src;
-  Fortran::parser::ContextualMessages messages{src, nullptr};
-  FoldingContext context{messages};
+  FoldingContext context{src, nullptr};
   ex1.Fold(context);
   MATCH("-10", Dump(ex1));
   MATCH("(Integer(4)::6.LE.7)", Dump(DefaultIntegerExpr{6} <= DefaultIntegerExpr{7}));
