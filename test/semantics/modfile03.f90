@@ -36,7 +36,6 @@ end
 !Expect: m1.mod
 !module m1
 !integer::x1
-!integer,private::x2
 !end
 
 !Expect: m2.mod

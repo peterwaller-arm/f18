@@ -27,17 +27,9 @@ module m
     procedure(b), deferred, nopass :: p, r
   end type
   type t2
-    integer :: x
   contains
-    private
     final :: c
     procedure, non_overridable :: d
-    procedure(a), deferred, public, nopass :: e
-  end type
-  type t3
-    sequence
-    integer i
-    real x
   end type
 contains
   subroutine b()
@@ -70,16 +62,9 @@ end module
 !    procedure(b),deferred,nopass::r
 !  end type
 !  type::t2
-!    integer::x
 !  contains
 !    final::c
-!    procedure,non_overridable,private::d
-!    procedure(a),deferred,nopass::e
-!  end type
-!  type::t3
-!    sequence
-!    integer::i
-!    real::x
+!    procedure,non_overridable::d
 !  end type
 !contains
 !  subroutine b()

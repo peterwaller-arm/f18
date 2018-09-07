@@ -30,9 +30,5 @@ end
 !type,private::t1
 !integer::i
 !end type
-!type,private::t2
-!integer::i
-!end type
 !type(t1)::x1
-!type(t2),private::x2
 !end

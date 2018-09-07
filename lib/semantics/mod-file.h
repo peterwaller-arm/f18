@@ -47,6 +47,9 @@ public:
   bool WriteAll();
 
 private:
+  using symbolSet = std::set<const Symbol *>;
+  using symbolVector = std::vector<const Symbol *>;
+
   std::string dir_{"."};
   // The mod file consists of uses, declarations, and contained subprograms:
   std::stringstream uses_;
@@ -61,6 +64,8 @@ private:
   void Write(const Symbol &);
   std::string GetAsString(const Symbol &);
   void PutSymbols(const Scope &);
+  symbolVector SortSymbols(const symbolSet);
+  symbolSet CollectSymbols(const Scope &);
   void PutSymbol(const Symbol &, bool &);
   void PutDerivedType(const Symbol &);
   void PutSubprogram(const Symbol &);
