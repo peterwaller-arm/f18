@@ -149,10 +149,12 @@ void Message::ResolveProvenances(const CookedSource &cooked) {
 
 std::optional<ProvenanceRange> Message::GetProvenanceRange(
     const CookedSource &cooked) const {
-  return std::visit(
-      common::visitors{
-          [&](const CharBlock &cb) { return cooked.GetProvenanceRange(cb); },
-          [](const ProvenanceRange &pr) { return std::make_optional(pr); }},
+  return std::visit(common::visitors{[&](const CharBlock &cb) {
+                                       return cooked.GetProvenanceRange(cb);
+                                     },
+                        [](const ProvenanceRange &pr) {
+                          return std::optional<ProvenanceRange>{pr};
+                        }},
       location_);
 }
 

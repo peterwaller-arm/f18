@@ -19,10 +19,10 @@
 template<int KIND> void testKind() {
   using Type =
       Fortran::evaluate::Type<Fortran::common::TypeCategory::Logical, KIND>;
-  TEST(Type::isSpecificType);
   TEST(Type::category == Fortran::common::TypeCategory::Logical);
   TEST(Type::kind == KIND);
-  using Value = Fortran::evaluate::Scalar<Type>;
+  TEST(!Type::hasLen);
+  using Value = typename Type::Value;
   MATCH(8 * KIND, Value::bits);
   TEST(!Value{}.IsTrue());
   TEST(!Value{false}.IsTrue());

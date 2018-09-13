@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "variable.h"
-#include "tools.h"
 #include "../common/idioms.h"
 #include "../parser/char-block.h"
 #include "../parser/characters.h"
@@ -27,9 +26,9 @@ namespace Fortran::evaluate {
 
 // Constructors, accessors, mutators
 
-Triplet::Triplet(std::optional<Expr<SubscriptInteger>> &&l,
-    std::optional<Expr<SubscriptInteger>> &&u,
-    std::optional<Expr<SubscriptInteger>> &&s) {
+Triplet::Triplet(std::optional<SubscriptIntegerExpr> &&l,
+    std::optional<SubscriptIntegerExpr> &&u,
+    std::optional<SubscriptIntegerExpr> &&s) {
   if (l.has_value()) {
     lower_ = IndirectSubscriptIntegerExpr::Make(std::move(*l));
   }
@@ -41,21 +40,21 @@ Triplet::Triplet(std::optional<Expr<SubscriptInteger>> &&l,
   }
 }
 
-std::optional<Expr<SubscriptInteger>> Triplet::lower() const {
+std::optional<SubscriptIntegerExpr> Triplet::lower() const {
   if (lower_) {
     return {**lower_};
   }
   return std::nullopt;
 }
 
-std::optional<Expr<SubscriptInteger>> Triplet::upper() const {
+std::optional<SubscriptIntegerExpr> Triplet::upper() const {
   if (upper_) {
     return {**upper_};
   }
   return std::nullopt;
 }
 
-std::optional<Expr<SubscriptInteger>> Triplet::stride() const {
+std::optional<SubscriptIntegerExpr> Triplet::stride() const {
   if (stride_) {
     return {**stride_};
   }
@@ -63,8 +62,8 @@ std::optional<Expr<SubscriptInteger>> Triplet::stride() const {
 }
 
 CoarrayRef::CoarrayRef(std::vector<const Symbol *> &&c,
-    std::vector<Expr<SubscriptInteger>> &&ss,
-    std::vector<Expr<SubscriptInteger>> &&css)
+    std::vector<SubscriptIntegerExpr> &&ss,
+    std::vector<SubscriptIntegerExpr> &&css)
   : base_(std::move(c)), subscript_(std::move(ss)),
     cosubscript_(std::move(css)) {
   CHECK(!base_.empty());
@@ -81,8 +80,8 @@ CoarrayRef &CoarrayRef::setTeam(Variable &&v, bool isTeamNumber) {
   return *this;
 }
 
-Substring::Substring(DataRef &&d, std::optional<Expr<SubscriptInteger>> &&f,
-    std::optional<Expr<SubscriptInteger>> &&l)
+Substring::Substring(DataRef &&d, std::optional<SubscriptIntegerExpr> &&f,
+    std::optional<SubscriptIntegerExpr> &&l)
   : u_{std::move(d)} {
   if (f.has_value()) {
     first_ = IndirectSubscriptIntegerExpr::Make(std::move(*f));
@@ -92,8 +91,8 @@ Substring::Substring(DataRef &&d, std::optional<Expr<SubscriptInteger>> &&f,
   }
 }
 
-Substring::Substring(std::string &&s, std::optional<Expr<SubscriptInteger>> &&f,
-    std::optional<Expr<SubscriptInteger>> &&l)
+Substring::Substring(std::string &&s, std::optional<SubscriptIntegerExpr> &&f,
+    std::optional<SubscriptIntegerExpr> &&l)
   : u_{std::move(s)} {
   if (f.has_value()) {
     first_ = IndirectSubscriptIntegerExpr::Make(std::move(*f));
@@ -103,14 +102,14 @@ Substring::Substring(std::string &&s, std::optional<Expr<SubscriptInteger>> &&f,
   }
 }
 
-Expr<SubscriptInteger> Substring::first() const {
+SubscriptIntegerExpr Substring::first() const {
   if (first_.has_value()) {
     return **first_;
   }
-  return AsExpr(Constant<SubscriptInteger>{1});
+  return {1};
 }
 
-Expr<SubscriptInteger> Substring::last() const {
+SubscriptIntegerExpr Substring::last() const {
   if (last_.has_value()) {
     return **last_;
   }
@@ -118,30 +117,39 @@ Expr<SubscriptInteger> Substring::last() const {
       common::visitors{[](const std::string &s) {
                          // std::string::size_type isn't convertible to uint64_t
                          // on Darwin
-                         return AsExpr(Constant<SubscriptInteger>{
-                             static_cast<std::uint64_t>(s.size())});
+                         return SubscriptIntegerExpr{
+                             static_cast<std::uint64_t>(s.size())};
                        },
           [](const DataRef &x) { return x.LEN(); }},
       u_);
 }
 
 std::optional<std::string> Substring::Fold(FoldingContext &context) {
-  std::optional<Constant<SubscriptInteger>> lbConst{first().Fold(context)};
-  if (lbConst.has_value()) {
-    first_ = AsExpr(*lbConst);
+  std::optional<SubscriptIntegerExpr::Scalar> lbValue, ubValue;
+  if (first_.has_value()) {
+    lbValue = (*first_)->Fold(context);
+  } else {
+    lbValue = first().Fold(context);
   }
-  std::optional<Constant<SubscriptInteger>> ubConst{last().Fold(context)};
-  if (ubConst.has_value()) {
-    last_ = AsExpr(*ubConst);
+  if (lbValue.has_value()) {
+    first_ = IndirectSubscriptIntegerExpr{SubscriptIntegerExpr{*lbValue}};
   }
-  if (auto both{common::AllPresent(std::move(lbConst), std::move(ubConst))}) {
-    std::int64_t lbi{std::get<0>(*both).value.ToInt64()};
-    std::int64_t ubi{std::get<1>(*both).value.ToInt64()};
+  if (last_.has_value()) {
+    ubValue = (*last_)->Fold(context);
+  } else {
+    ubValue = last().Fold(context);
+  }
+  if (ubValue.has_value()) {
+    last_ = IndirectSubscriptIntegerExpr{SubscriptIntegerExpr{*ubValue}};
+  }
+  if (lbValue.has_value() && ubValue.has_value()) {
+    std::int64_t lbi{lbValue->ToInt64()};
+    std::int64_t ubi{ubValue->ToInt64()};
     if (ubi < lbi) {
       // These cases are well defined, and they produce zero-length results.
       u_ = ""s;
-      first_ = AsExpr(Constant<SubscriptInteger>{1});
-      last_ = AsExpr(Constant<SubscriptInteger>{0});
+      first_ = SubscriptIntegerExpr{1};
+      last_ = SubscriptIntegerExpr{0};
       return {""s};
     }
     if (lbi <= 0) {
@@ -149,11 +157,11 @@ std::optional<std::string> Substring::Fold(FoldingContext &context) {
           "lower bound on substring (%jd) is less than one"_en_US,
           static_cast<std::intmax_t>(lbi));
       lbi = 1;
-      first_ = AsExpr(Constant<SubscriptInteger>{lbi});
+      first_ = SubscriptIntegerExpr{lbi};
     }
     if (ubi <= 0) {
       u_ = ""s;
-      last_ = AsExpr(Constant<SubscriptInteger>{0});
+      last_ = SubscriptIntegerExpr{0};
       return {""s};
     }
     if (std::string * str{std::get_if<std::string>(&u_)}) {
@@ -163,7 +171,7 @@ std::optional<std::string> Substring::Fold(FoldingContext &context) {
             "upper bound on substring (%jd) is greater than character length (%jd)"_en_US,
             static_cast<std::intmax_t>(ubi), static_cast<std::intmax_t>(len));
         ubi = len;
-        last_ = AsExpr(Constant<SubscriptInteger>{ubi});
+        last_ = SubscriptIntegerExpr{ubi};
       }
       std::string result{str->substr(lbi - 1, ubi - lbi + 1)};
       u_ = result;
@@ -329,37 +337,36 @@ std::ostream &Label::Dump(std::ostream &o) const {
 }
 
 // LEN()
-static Expr<SubscriptInteger> SymbolLEN(const Symbol &sym) {
-  return AsExpr(Constant<SubscriptInteger>{0});  // TODO
+static SubscriptIntegerExpr SymbolLEN(const Symbol &sym) {
+  return SubscriptIntegerExpr{0};  // TODO
 }
-Expr<SubscriptInteger> Component::LEN() const { return SymbolLEN(symbol()); }
-Expr<SubscriptInteger> ArrayRef::LEN() const {
+SubscriptIntegerExpr Component::LEN() const { return SymbolLEN(symbol()); }
+SubscriptIntegerExpr ArrayRef::LEN() const {
   return std::visit(
       common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
           [](const Component &x) { return x.LEN(); }},
       u_);
 }
-Expr<SubscriptInteger> CoarrayRef::LEN() const {
+SubscriptIntegerExpr CoarrayRef::LEN() const {
   return SymbolLEN(*base_.back());
 }
-Expr<SubscriptInteger> DataRef::LEN() const {
+SubscriptIntegerExpr DataRef::LEN() const {
   return std::visit(
       common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
           [](const auto &x) { return x.LEN(); }},
       u_);
 }
-Expr<SubscriptInteger> Substring::LEN() const {
-  return AsExpr(
-      Extremum<SubscriptInteger>{AsExpr(Constant<SubscriptInteger>{0}),
-          last() - first() + AsExpr(Constant<SubscriptInteger>{1})});
+SubscriptIntegerExpr Substring::LEN() const {
+  return SubscriptIntegerExpr::Max{
+      SubscriptIntegerExpr{0}, last() - first() + SubscriptIntegerExpr{1}};
 }
-Expr<SubscriptInteger> ProcedureDesignator::LEN() const {
+SubscriptIntegerExpr ProcedureDesignator::LEN() const {
   return std::visit(
       common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
           [](const Component &c) { return c.LEN(); },
           [](const auto &) {
             CRASH_NO_CASE;
-            return AsExpr(Constant<SubscriptInteger>{0});
+            return SubscriptIntegerExpr{0};
           }},
       u_);
 }

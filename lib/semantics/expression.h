@@ -16,32 +16,36 @@
 #define FORTRAN_SEMANTICS_EXPRESSION_H_
 
 #include "../evaluate/expression.h"
-#include "../evaluate/type.h"
+#include "../parser/message.h"
 #include "../parser/parse-tree.h"
+#include <cinttypes>
 #include <optional>
 
 namespace Fortran::semantics {
 
-using MaybeExpr = std::optional<evaluate::Expr<evaluate::SomeType>>;
+class ExpressionAnalyzer {
+public:
+  using KindParam = std::int64_t;
 
-struct IntrinsicTypeDefaultKinds {
-  int defaultIntegerKind{evaluate::DefaultInteger::kind};
-  int defaultRealKind{evaluate::DefaultReal::kind};
-  int defaultDoublePrecisionKind{evaluate::DefaultDoublePrecision::kind};
-  int defaultQuadPrecisionKind{evaluate::DefaultDoublePrecision::kind};
-  int defaultCharacterKind{evaluate::DefaultCharacter::kind};
-  int defaultLogicalKind{evaluate::DefaultLogical::kind};
+  ExpressionAnalyzer(evaluate::FoldingContext &c, KindParam dIK)
+    : context_{c}, defaultIntegerKind_{dIK} {}
+
+  evaluate::FoldingContext &context() { return context_; }
+  KindParam defaultIntegerKind() const { return defaultIntegerKind_; }
+  KindParam defaultRealKind() const { return defaultRealKind_; }
+  KindParam defaultLogicalKind() const { return defaultLogicalKind_; }
+
+  // Performs semantic checking on an expression.  If successful,
+  // returns its typed expression representation.
+  std::optional<evaluate::GenericExpr> Analyze(const parser::Expr &);
+  KindParam Analyze(const std::optional<parser::KindParam> &,
+      KindParam defaultKind, KindParam kanjiKind = -1 /* not allowed here */);
+
+private:
+  evaluate::FoldingContext context_;
+  KindParam defaultIntegerKind_{4};
+  KindParam defaultRealKind_{defaultIntegerKind_};
+  KindParam defaultLogicalKind_{defaultIntegerKind_};
 };
-
-// Semantic analysis of one expression.
-std::optional<evaluate::Expr<evaluate::SomeType>> AnalyzeExpr(
-    evaluate::FoldingContext &, const IntrinsicTypeDefaultKinds &,
-    const parser::Expr &);
-
-// Semantic analysis of all expressions in a parse tree, which is
-// decorated with typed representations for top-level expressions.
-void AnalyzeExpressions(parser::Program &, evaluate::FoldingContext &,
-    const IntrinsicTypeDefaultKinds &);
-
 }  // namespace Fortran::semantics
 #endif  // FORTRAN_SEMANTICS_EXPRESSION_H_

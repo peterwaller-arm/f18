@@ -19,7 +19,6 @@ add_library(FortranEvaluate
   integer.cc
   logical.cc
   real.cc
-  tools.cc
   type.cc
   variable.cc
 )
