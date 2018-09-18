@@ -37,46 +37,23 @@
 
 namespace Fortran::semantics {
 class DerivedTypeSpec;
-class Symbol;
 }  // namespace Fortran::semantics
 
 namespace Fortran::evaluate {
 
 using common::TypeCategory;
 
-struct DynamicType {
-  bool operator==(const DynamicType &that) const {
-    return category == that.category && kind == that.kind &&
-        derived == that.derived;
-  }
-  std::string Dump() const {
-    return EnumToString(category) + '(' + std::to_string(kind) + ')';
-  }
-
-  DynamicType ResultTypeForMultiply(const DynamicType &) const;
-
-  TypeCategory category;
-  int kind{0};
-  const semantics::DerivedTypeSpec *derived{nullptr};
-};
-
-std::optional<DynamicType> GetSymbolType(const semantics::Symbol &);
-
 // Specific intrinsic types are represented by specializations of
 // this class template Type<CATEGORY, KIND>.
 template<TypeCategory CATEGORY, int KIND = 0> class Type;
 
 template<TypeCategory CATEGORY, int KIND> struct TypeBase {
-  // Only types that represent a known kind of one of the five intrinsic
-  // data types will have set this flag to true.
-  static constexpr bool isSpecificIntrinsicType{true};
-  static constexpr DynamicType dynamicType{CATEGORY, KIND};
-  static constexpr std::optional<DynamicType> GetType() {
-    return {dynamicType};
-  }
+  static constexpr bool isSpecificType{true};
   static constexpr TypeCategory category{CATEGORY};
   static constexpr int kind{KIND};
-  static std::string Dump() { return dynamicType.Dump(); }
+  static std::string Dump() {
+    return EnumToString(category) + '(' + std::to_string(kind) + ')';
+  }
 };
 
 template<int KIND>
@@ -156,6 +133,24 @@ public:
   using Scalar = value::Logical<8 * KIND>;
 };
 
+template<> class Type<TypeCategory::Derived> {
+public:
+  static constexpr bool isSpecificType{true};
+  static constexpr TypeCategory category{TypeCategory::Derived};
+  using Scalar = void;
+
+  CLASS_BOILERPLATE(Type)
+  explicit Type(const semantics::DerivedTypeSpec &s) : spec_{&s} {}
+
+  const semantics::DerivedTypeSpec &spec() const { return *spec_; }
+  std::string Dump() const;
+
+private:
+  // This member should be a reference, except that copy construction
+  // and assignment would not be possible.
+  const semantics::DerivedTypeSpec *spec_;
+};
+
 // Type functions
 
 template<typename T> using Scalar = typename std::decay_t<T>::Scalar;
@@ -164,43 +159,50 @@ template<typename T> using Scalar = typename std::decay_t<T>::Scalar;
 template<TypeCategory CATEGORY, typename T>
 using SameKind = Type<CATEGORY, std::decay_t<T>::kind>;
 
+// Convenience type aliases:
+// Default REAL just simply has to be IEEE-754 single precision today.
+// It occupies one numeric storage unit by definition.  The default INTEGER
+// and default LOGICAL intrinsic types also have to occupy one numeric
+// storage unit, so their kinds are also forced.  Default COMPLEX must always
+// comprise two default REAL components.
+// TODO: Support compile-time options to default reals, ints, or both to KIND=8
+
+using DefaultReal = Type<TypeCategory::Real, 4>;
+using DefaultDoublePrecision = Type<TypeCategory::Real, 2 * DefaultReal::kind>;
+using DefaultInteger = Type<TypeCategory::Integer, DefaultReal::kind>;
+using IntrinsicTypeParameterType = DefaultInteger;
+using DefaultComplex = SameKind<TypeCategory::Complex, DefaultReal>;
+using DefaultLogical = Type<TypeCategory::Logical, DefaultInteger::kind>;
+using DefaultCharacter = Type<TypeCategory::Character, 1>;
+
 using SubscriptInteger = Type<TypeCategory::Integer, 8>;
 using LogicalResult = Type<TypeCategory::Logical, 1>;
 using LargestReal = Type<TypeCategory::Real, 16>;
 
-// A predicate that is true when a kind value is a kind that could possibly
-// be supported for an intrinsic type category on some target instruction
-// set architecture.
-static constexpr bool IsValidKindOfIntrinsicType(
-    TypeCategory category, std::int64_t kind) {
-  switch (category) {
-  case TypeCategory::Integer:
-    return kind == 1 || kind == 2 || kind == 4 || kind == 8 || kind == 16;
-  case TypeCategory::Real:
-  case TypeCategory::Complex:
-    return kind == 2 || kind == 4 || kind == 8 || kind == 10 || kind == 16;
-  case TypeCategory::Character:
-    return kind == 1;  // TODO: || kind == 2 || kind == 4;
-  case TypeCategory::Logical:
-    return kind == 1 || kind == 2 || kind == 4 || kind == 8;
-  default: return false;
-  }
-}
-
 // For each intrinsic type category CAT, CategoryTypes<CAT> is an instantiation
 // of std::tuple<Type<CAT, K>> that comprises every kind value K in that
 // category that could possibly be supported on any target.
-template<TypeCategory CATEGORY, int KIND>
-using CategoryKindTuple =
-    std::conditional_t<IsValidKindOfIntrinsicType(CATEGORY, KIND),
-        std::tuple<Type<CATEGORY, KIND>>, std::tuple<>>;
-
 template<TypeCategory CATEGORY, int... KINDS>
-using CategoryTypesHelper =
-    common::CombineTuples<CategoryKindTuple<CATEGORY, KINDS>...>;
+using CategoryTypesTuple = std::tuple<Type<CATEGORY, KINDS>...>;
 
+template<TypeCategory CATEGORY> struct CategoryTypesHelper;
+template<> struct CategoryTypesHelper<TypeCategory::Integer> {
+  using type = CategoryTypesTuple<TypeCategory::Integer, 1, 2, 4, 8, 16>;
+};
+template<> struct CategoryTypesHelper<TypeCategory::Real> {
+  using type = CategoryTypesTuple<TypeCategory::Real, 2, 4, 8, 10, 16>;
+};
+template<> struct CategoryTypesHelper<TypeCategory::Complex> {
+  using type = CategoryTypesTuple<TypeCategory::Complex, 2, 4, 8, 10, 16>;
+};
+template<> struct CategoryTypesHelper<TypeCategory::Character> {
+  using type = CategoryTypesTuple<TypeCategory::Character, 1>;  // TODO: 2 & 4
+};
+template<> struct CategoryTypesHelper<TypeCategory::Logical> {
+  using type = CategoryTypesTuple<TypeCategory::Logical, 1, 2, 4, 8>;
+};
 template<TypeCategory CATEGORY>
-using CategoryTypes = CategoryTypesHelper<CATEGORY, 1, 2, 4, 8, 10, 16, 32>;
+using CategoryTypes = typename CategoryTypesHelper<CATEGORY>::type;
 
 using IntegerTypes = CategoryTypes<TypeCategory::Integer>;
 using RealTypes = CategoryTypes<TypeCategory::Real>;
@@ -278,15 +280,6 @@ template<typename TYPES> struct SomeScalar {
         u);
   }
 
-  std::optional<DynamicType> GetType() const {
-    return std::visit(
-        [](const auto &x) {
-          using Ty = std::decay_t<decltype(x)>;
-          return TypeOf<Ty>::GetType();
-        },
-        u);
-  }
-
   common::MapTemplate<Scalar, Types> u;
 };
 
@@ -296,28 +289,9 @@ using GenericScalar = SomeScalar<AllIntrinsicTypes>;
 
 // Represents a type of any supported kind within a particular category.
 template<TypeCategory CATEGORY> struct SomeKind {
-  static constexpr bool isSpecificIntrinsicType{false};
+  static constexpr bool isSpecificType{false};
   static constexpr TypeCategory category{CATEGORY};
   using Scalar = SomeKindScalar<category>;
-};
-
-template<> class SomeKind<TypeCategory::Derived> {
-public:
-  static constexpr bool isSpecificIntrinsicType{true};
-  static constexpr TypeCategory category{TypeCategory::Derived};
-  using Scalar = void;
-
-  CLASS_BOILERPLATE(SomeKind)
-  explicit SomeKind(const semantics::DerivedTypeSpec &s) : spec_{&s} {}
-
-  std::optional<DynamicType> GetType() const {
-    return {DynamicType{category, 0, spec_}};
-  }
-  const semantics::DerivedTypeSpec &spec() const { return *spec_; }
-  std::string Dump() const;
-
-private:
-  const semantics::DerivedTypeSpec *spec_;
 };
 
 using SomeInteger = SomeKind<TypeCategory::Integer>;
@@ -325,83 +299,13 @@ using SomeReal = SomeKind<TypeCategory::Real>;
 using SomeComplex = SomeKind<TypeCategory::Complex>;
 using SomeCharacter = SomeKind<TypeCategory::Character>;
 using SomeLogical = SomeKind<TypeCategory::Logical>;
-using SomeDerived = SomeKind<TypeCategory::Derived>;
 
 // Represents a completely generic intrinsic type.
-using SomeCategory = std::tuple<SomeInteger, SomeReal, SomeComplex,
-    SomeCharacter, SomeLogical, SomeDerived>;
+using SomeCategory =
+    std::tuple<SomeInteger, SomeReal, SomeComplex, SomeCharacter, SomeLogical>;
 struct SomeType {
-  static constexpr bool isSpecificIntrinsicType{false};
+  static constexpr bool isSpecificType{false};
   using Scalar = GenericScalar;
-};
-
-// For "[extern] template class", &c. boilerplate
-#define FOR_EACH_INTEGER_KIND(PREFIX) \
-  PREFIX<Type<TypeCategory::Integer, 1>>; \
-  PREFIX<Type<TypeCategory::Integer, 2>>; \
-  PREFIX<Type<TypeCategory::Integer, 4>>; \
-  PREFIX<Type<TypeCategory::Integer, 8>>; \
-  PREFIX<Type<TypeCategory::Integer, 16>>;
-#define FOR_EACH_REAL_KIND(PREFIX) \
-  PREFIX<Type<TypeCategory::Real, 2>>; \
-  PREFIX<Type<TypeCategory::Real, 4>>; \
-  PREFIX<Type<TypeCategory::Real, 8>>; \
-  PREFIX<Type<TypeCategory::Real, 10>>; \
-  PREFIX<Type<TypeCategory::Real, 16>>;
-#define FOR_EACH_COMPLEX_KIND(PREFIX) \
-  PREFIX<Type<TypeCategory::Complex, 2>>; \
-  PREFIX<Type<TypeCategory::Complex, 4>>; \
-  PREFIX<Type<TypeCategory::Complex, 8>>; \
-  PREFIX<Type<TypeCategory::Complex, 10>>; \
-  PREFIX<Type<TypeCategory::Complex, 16>>;
-#define FOR_EACH_CHARACTER_KIND(PREFIX) \
-  PREFIX<Type<TypeCategory::Character, 1>>; \
-  PREFIX<Type<TypeCategory::Character, 2>>; \
-  PREFIX<Type<TypeCategory::Character, 4>>;
-#define FOR_EACH_LOGICAL_KIND(PREFIX) \
-  PREFIX<Type<TypeCategory::Logical, 1>>; \
-  PREFIX<Type<TypeCategory::Logical, 2>>; \
-  PREFIX<Type<TypeCategory::Logical, 4>>; \
-  PREFIX<Type<TypeCategory::Logical, 8>>;
-#define FOR_EACH_INTRINSIC_KIND(PREFIX) \
-  FOR_EACH_INTEGER_KIND(PREFIX) \
-  FOR_EACH_REAL_KIND(PREFIX) \
-  FOR_EACH_COMPLEX_KIND(PREFIX) \
-  FOR_EACH_CHARACTER_KIND(PREFIX) \
-  FOR_EACH_LOGICAL_KIND(PREFIX)
-#define FOR_EACH_SPECIFIC_TYPE(PREFIX) \
-  FOR_EACH_INTRINSIC_KIND(PREFIX) \
-  PREFIX<SomeDerived>;
-#define FOR_EACH_CATEGORY_TYPE(PREFIX) \
-  PREFIX<SomeInteger>; \
-  PREFIX<SomeReal>; \
-  PREFIX<SomeComplex>; \
-  PREFIX<SomeCharacter>; \
-  PREFIX<SomeLogical>; \
-  PREFIX<SomeType>;
-#define FOR_EACH_TYPE_AND_KIND(PREFIX) \
-  FOR_EACH_SPECIFIC_TYPE(PREFIX) \
-  FOR_EACH_CATEGORY_TYPE(PREFIX)
-
-// Wraps a constant value in a class with its resolved type.
-template<typename T> struct Constant {
-  using Result = T;
-  using Value = Scalar<Result>;
-  CLASS_BOILERPLATE(Constant)
-  template<typename A> Constant(const A &x) : value{x} {}
-  template<typename A>
-  Constant(std::enable_if_t<!std::is_reference_v<A>, A> &&x)
-    : value(std::move(x)) {}
-  constexpr std::optional<DynamicType> GetType() const {
-    if constexpr (Result::isSpecificIntrinsicType) {
-      return Result::GetType();
-    } else {
-      return value.GetType();
-    }
-  }
-  int Rank() const { return 0; }  // TODO: array constants
-  std::ostream &Dump(std::ostream &) const;
-  Value value;
 };
 
 }  // namespace Fortran::evaluate

@@ -20,14 +20,16 @@
 #include <vector>
 
 namespace Fortran::parser {
+class Messages;
 struct Program;
 }  // namespace Fortran::parser
 
 namespace Fortran::semantics {
 
-class SemanticsContext;
+class Scope;
 
-void ResolveNames(SemanticsContext &, const parser::Program &);
+void ResolveNames(parser::Messages &, Scope &, const parser::Program &,
+    const std::vector<std::string> &);
 void DumpSymbols(std::ostream &);
 
 }  // namespace Fortran::semantics

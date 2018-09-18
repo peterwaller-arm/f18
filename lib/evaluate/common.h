@@ -116,49 +116,28 @@ using HostUnsignedInt =
 // - There is no default constructor (Class() {}), usually to prevent the
 //   need for std::monostate as a default constituent in a std::variant<>.
 // - There are full copy and move semantics for construction and assignment.
-// - Discriminated unions have a std::variant<> member "u" and support
-//   explicit copy and move constructors.
-#define DEFAULT_CONSTRUCTORS_AND_ASSIGNMENTS(t) \
+#define CLASS_BOILERPLATE(t) \
+  t() = delete; \
   t(const t &) = default; \
   t(t &&) = default; \
   t &operator=(const t &) = default; \
   t &operator=(t &&) = default;
 
-#define CLASS_BOILERPLATE(t) \
-  t() = delete; \
-  DEFAULT_CONSTRUCTORS_AND_ASSIGNMENTS(t)
-
-#define EVALUATE_UNION_CLASS_BOILERPLATE(t) \
-  CLASS_BOILERPLATE(t) \
-  template<typename _A> explicit t(const _A &x) : u{x} {} \
-  template<typename _A> \
-  explicit t(std::enable_if_t<!std::is_reference_v<_A>, _A> &&x) \
-    : u(std::move(x)) {}
-
 // Force availability of copy construction and assignment
 template<typename A> using CopyableIndirection = common::Indirection<A, true>;
-
-// Forward definition of Expr<> so that it can be indirectly used in its own
-// definition
-template<typename A> class Expr;
 
 // Classes that support a Fold(FoldingContext &) member function have the
 // IsFoldableTrait.
 CLASS_TRAIT(IsFoldableTrait)
 struct FoldingContext {
-  explicit FoldingContext(const parser::ContextualMessages &m,
+  explicit FoldingContext(parser::ContextualMessages &m,
       Rounding round = defaultRounding, bool flush = false)
     : messages{m}, rounding{round}, flushDenormalsToZero{flush} {}
-  FoldingContext(const parser::ContextualMessages &m, const FoldingContext &c)
+  FoldingContext(parser::ContextualMessages &m, const FoldingContext &c)
     : messages{m}, rounding{c.rounding}, flushDenormalsToZero{
                                              c.flushDenormalsToZero} {}
 
-  // For narrowed contexts
-  FoldingContext(const FoldingContext &c, const parser::ContextualMessages &m)
-    : messages{m}, rounding{c.rounding}, flushDenormalsToZero{
-                                             c.flushDenormalsToZero} {}
-
-  parser::ContextualMessages messages;
+  parser::ContextualMessages &messages;
   Rounding rounding{defaultRounding};
   bool flushDenormalsToZero{false};
 };

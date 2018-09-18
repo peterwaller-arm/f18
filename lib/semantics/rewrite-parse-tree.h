@@ -20,11 +20,11 @@ class Messages;
 struct Program;
 }  // namespace Fortran::parser
 namespace Fortran::semantics {
-class SemanticsContext;
+class Scope;
 }  // namespace Fortran::semantics
 
 namespace Fortran::semantics {
-void RewriteParseTree(SemanticsContext &, parser::Program &);
+void RewriteParseTree(parser::Messages &, const Scope &, parser::Program &);
 }  // namespace Fortran::semantics
 
 #endif  // FORTRAN_SEMANTICS_REWRITE_PARSE_TREE_H_

@@ -18,10 +18,10 @@
 program main
  !DEF: /main/x ObjectEntity INTEGER(4)
  integer x
- !DEF: /main/s Subprogram
+ !REF: /main/s
  call s
 contains
- !REF: /main/s
+ !DEF: /main/s Subprogram
  subroutine s
   !DEF: /main/s/y (implicit) ObjectEntity REAL(4)
   !REF: /main/x

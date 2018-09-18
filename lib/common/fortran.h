@@ -19,7 +19,6 @@
 // once here to avoid redundancy and needless translation.
 
 #include "idioms.h"
-#include <cinttypes>
 
 namespace Fortran::common {
 

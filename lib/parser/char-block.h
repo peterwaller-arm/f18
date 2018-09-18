@@ -74,20 +74,6 @@ public:
   bool operator>=(const CharBlock &that) const { return Compare(that) >= 0; }
   bool operator>(const CharBlock &that) const { return Compare(that) > 0; }
 
-  bool operator<(const char *that) const { return Compare(that) < 0; }
-  bool operator<=(const char *that) const { return Compare(that) <= 0; }
-  bool operator==(const char *that) const { return Compare(that) == 0; }
-  bool operator!=(const char *that) const { return Compare(that) != 0; }
-  bool operator>=(const char *that) const { return Compare(that) >= 0; }
-  bool operator>(const char *that) const { return Compare(that) > 0; }
-
-  friend bool operator<(const char *, const CharBlock &);
-  friend bool operator<=(const char *, const CharBlock &);
-  friend bool operator==(const char *, const CharBlock &);
-  friend bool operator!=(const char *, const CharBlock &);
-  friend bool operator>=(const char *, const CharBlock &);
-  friend bool operator>(const char *, const CharBlock &);
-
 private:
   int Compare(const CharBlock &that) const {
     std::size_t bytes{std::min(size(), that.size())};
@@ -99,35 +85,8 @@ private:
     return size() < that.size() ? -1 : size() > that.size();
   }
 
-  int Compare(const char *that) const {
-    std::size_t bytes{size()};
-    if (int cmp{std::strncmp(begin(), that, bytes)}) {
-      return cmp;
-    }
-    return that[bytes] == '\0' ? 0 : -1;
-  }
-
   common::Interval<const char *> interval_{nullptr, 0};
 };
-
-inline bool operator<(const char *left, const CharBlock &right) {
-  return right > left;
-}
-inline bool operator<=(const char *left, const CharBlock &right) {
-  return right >= left;
-}
-inline bool operator==(const char *left, const CharBlock &right) {
-  return right == left;
-}
-inline bool operator!=(const char *left, const CharBlock &right) {
-  return right != left;
-}
-inline bool operator>=(const char *left, const CharBlock &right) {
-  return right <= left;
-}
-inline bool operator>(const char *left, const CharBlock &right) {
-  return right < left;
-}
 
 }  // namespace Fortran::parser
 

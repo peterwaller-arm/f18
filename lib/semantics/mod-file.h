@@ -16,7 +16,6 @@
 #define FORTRAN_SEMANTICS_MOD_FILE_H_
 
 #include "attr.h"
-#include "default-kinds.h"
 #include "resolve-names.h"
 #include "../parser/message.h"
 #include <set>
@@ -33,21 +32,28 @@ namespace Fortran::semantics {
 using SourceName = parser::CharBlock;
 class Symbol;
 class Scope;
-class SemanticsContext;
 
 class ModFileWriter {
 public:
-  ModFileWriter(SemanticsContext &context) : context_{context} {}
-  void WriteAll();
+  // The directory to write .mod files in.
+  void set_directory(const std::string &dir) { dir_ = dir; }
+
+  // Errors encountered during writing. Non-empty if WriteAll returns false.
+  parser::Messages &&errors() { return std::move(errors_); }
+
+  // Write out all .mod files; if error return false.
+  bool WriteAll(const Scope &);
 
 private:
-  SemanticsContext &context_;
+  std::string dir_{"."};
+  // The mod file consists of uses, declarations, and contained subprograms:
   std::stringstream uses_;
   std::stringstream useExtraAttrs_;  // attrs added to used entity
   std::stringstream decls_;
   std::stringstream contains_;
+  // Any errors encountered during writing:
+  parser::Messages errors_;
 
-  void WriteAll(const Scope &);
   void WriteOne(const Scope &);
   void Write(const Symbol &);
   std::string GetAsString(const Symbol &);
@@ -63,14 +69,18 @@ private:
 class ModFileReader {
 public:
   // directories specifies where to search for module files
-  ModFileReader(SemanticsContext &context) : context_{context} {}
+  ModFileReader(const std::vector<std::string> &directories)
+    : directories_{directories} {}
   // Find and read the module file for a module or submodule.
   // If ancestor is specified, look for a submodule of that module.
   // Return the Scope for that module/submodule or nullptr on error.
-  Scope *Read(const SourceName &, Scope *ancestor = nullptr);
+  Scope *Read(Scope &, const SourceName &, Scope *ancestor = nullptr);
+  // Errors that occurred when Read returns nullptr.
+  parser::Messages &errors() { return errors_; }
 
 private:
-  SemanticsContext &context_;
+  std::vector<std::string> directories_;
+  parser::Messages errors_;
 
   std::optional<std::string> FindModFile(
       const SourceName &, const std::string &);

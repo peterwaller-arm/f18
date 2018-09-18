@@ -22,7 +22,6 @@
 #include "../../lib/parser/parsing.h"
 #include "../../lib/parser/provenance.h"
 #include "../../lib/parser/unparse.h"
-#include "../../lib/semantics/default-kinds.h"
 #include "../../lib/semantics/dump-parse-tree.h"
 #include "../../lib/semantics/expression.h"
 #include "../../lib/semantics/semantics.h"
@@ -80,7 +79,6 @@ struct DriverOptions {
   bool verbose{false};  // -v
   bool compileOnly{false};  // -c
   std::string outputPath;  // -o path
-  std::vector<std::string> searchDirectories{"."s};  // -I dir
   std::string moduleDirectory{"."s};  // -module dir
   bool forcedForm{false};  // -Mfixed or -Mfree appeared
   bool warningsAreErrors{false};  // -Werror
@@ -94,7 +92,6 @@ struct DriverOptions {
   bool dumpSymbols{false};
   bool debugExpressions{false};
   bool debugResolveNames{false};
-  bool debugSemantics{false};
   bool measureTree{false};
   std::vector<std::string> pgf90Args;
   const char *prefix{nullptr};
@@ -160,8 +157,7 @@ std::string RelocatableName(const DriverOptions &driver, std::string path) {
 int exitStatus{EXIT_SUCCESS};
 
 std::string CompileFortran(std::string path, Fortran::parser::Options options,
-    DriverOptions &driver,
-    Fortran::semantics::SemanticsContext &semanticsContext) {
+    DriverOptions &driver, Fortran::semantics::Semantics &semantics) {
   if (!driver.forcedForm) {
     auto dot{path.rfind(".")};
     if (dot != std::string::npos) {
@@ -169,7 +165,6 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
       options.isFixedForm = suffix == "f" || suffix == "F" || suffix == "ff";
     }
   }
-  options.searchDirectories = driver.searchDirectories;
   Fortran::parser::Parsing parsing;
   parsing.Prescan(path, options);
   if (!parsing.messages().empty() &&
@@ -211,17 +206,16 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
   if (driver.measureTree) {
     MeasureParseTree(parseTree);
   }
-  // TODO: Change this predicate to just "if (!driver.debugNoSemantics)"
-  if (driver.debugSemantics || driver.debugResolveNames || driver.dumpSymbols ||
+  if (driver.debugResolveNames || driver.dumpSymbols ||
       driver.dumpUnparseWithSymbols || driver.debugExpressions) {
-    Fortran::semantics::Semantics semantics{
-        semanticsContext, parseTree, parsing.cooked()};
-    semantics.Perform();
-    semantics.EmitMessages(std::cerr);
+    semantics.Perform(parseTree);
+    auto &messages{semantics.messages()};
+    messages.Emit(std::cerr, parsing.cooked());
     if (driver.dumpSymbols) {
       semantics.DumpSymbols(std::cout);
     }
-    if (semantics.AnyFatalError()) {
+    if (!messages.empty() &&
+        (driver.warningsAreErrors || messages.AnyFatalError())) {
       std::cerr << driver.prefix << "semantic errors in " << path << '\n';
       exitStatus = EXIT_FAILURE;
       return {};
@@ -229,6 +223,21 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
     if (driver.dumpUnparseWithSymbols) {
       Fortran::semantics::UnparseWithSymbols(
           std::cout, parseTree, driver.encoding);
+      return {};
+    }
+  }
+  if (driver.debugExpressions) {
+    Fortran::parser::CharBlock whole{parsing.cooked().data()};
+    Fortran::parser::Messages messages;
+    Fortran::parser::ContextualMessages contextualMessages{whole, &messages};
+    Fortran::evaluate::FoldingContext context{contextualMessages};
+    Fortran::semantics::IntrinsicTypeDefaultKinds defaults;
+    Fortran::semantics::AnalyzeExpressions(parseTree, context, defaults);
+    messages.Emit(std::cerr, parsing.cooked());
+    if (!messages.empty() &&
+        (driver.warningsAreErrors || messages.AnyFatalError())) {
+      std::cerr << driver.prefix << "semantic errors in " << path << '\n';
+      exitStatus = EXIT_FAILURE;
       return {};
     }
   }
@@ -319,8 +328,6 @@ int main(int argc, char *const argv[]) {
   options.predefinitions.emplace_back("__F18_MINOR__", "1");
   options.predefinitions.emplace_back("__F18_PATCHLEVEL__", "1");
 
-  Fortran::semantics::IntrinsicTypeDefaultKinds defaultKinds;
-
   std::vector<std::string> fortranSources, otherSources, relocatables;
   bool anyFiles{false};
 
@@ -400,9 +407,6 @@ int main(int argc, char *const argv[]) {
       driver.measureTree = true;
     } else if (arg == "-fdebug-instrumented-parse") {
       options.instrumentedParse = true;
-    } else if (arg == "-fdebug-semantics") {
-      // TODO: Enable by default once basic tests pass
-      driver.debugSemantics = true;
     } else if (arg == "-funparse") {
       driver.dumpUnparse = true;
     } else if (arg == "-funparse-with-symbols") {
@@ -425,12 +429,6 @@ int main(int argc, char *const argv[]) {
     } else if (arg.substr(0, 2) == "-U") {
       options.predefinitions.emplace_back(
           arg.substr(2), std::optional<std::string>{});
-    } else if (arg == "-r8" || arg == "-fdefault-real-8") {
-      defaultKinds.set_defaultRealKind(8);
-    } else if (arg == "-i8" || arg == "-fdefault-integer-8") {
-      defaultKinds.set_defaultIntegerKind(8);
-    } else if (arg == "-fno-large-arrays") {
-      defaultKinds.set_subscriptIntegerKind(4);
     } else if (arg == "-help" || arg == "--help" || arg == "-?") {
       std::cerr
           << "f18 options:\n"
@@ -440,8 +438,6 @@ int main(int argc, char *const argv[]) {
           << "  -M[no]backslash      disable[enable] \\escapes in literals\n"
           << "  -Mstandard           enable conformance warnings\n"
           << "  -Mx,125,4            set bit 2 in xflag[125] (all Kanji mode)\n"
-          << "  -r8 | -fdefault-real-8 | -i8 | -fdefault-integer-8  "
-             "change default kinds of intrinsic types\n"
           << "  -Werror              treat warnings as errors\n"
           << "  -ed                  enable fixed form D lines\n"
           << "  -E                   prescan & preprocess only\n"
@@ -455,7 +451,6 @@ int main(int argc, char *const argv[]) {
           << "  -fdebug-dump-symbols\n"
           << "  -fdebug-resolve-names\n"
           << "  -fdebug-instrumented-parse\n"
-          << "  -fdebug-semantics    perform semantic checks\n"
           << "  -v -c -o -I -D -U    have their usual meanings\n"
           << "  -help                print this again\n"
           << "Other options are passed through to the compiler.\n";
@@ -469,10 +464,10 @@ int main(int argc, char *const argv[]) {
         driver.verbose = true;
       } else if (arg == "-I") {
         driver.pgf90Args.push_back(args.front());
-        driver.searchDirectories.push_back(args.front());
+        options.searchDirectories.push_back(args.front());
         args.pop_front();
       } else if (arg.substr(0, 2) == "-I") {
-        driver.searchDirectories.push_back(arg.substr(2));
+        options.searchDirectories.push_back(arg.substr(2));
       } else if (arg == "-module") {
         driver.moduleDirectory = args.front();
         driver.pgf90Args.push_back(driver.moduleDirectory);
@@ -492,21 +487,17 @@ int main(int argc, char *const argv[]) {
     driver.pgf90Args.push_back("-Mbackslash");
   }
 
-
-  Fortran::semantics::SemanticsContext semanticsContext{defaultKinds};
-  semanticsContext.set_moduleDirectory(driver.moduleDirectory)
-      .set_searchDirectories(driver.searchDirectories)
-      .set_warningsAreErrors(driver.warningsAreErrors)
-      .set_debugExpressions(driver.debugExpressions);
-
+  Fortran::semantics::Semantics semantics;
+  semantics.set_searchDirectories(options.searchDirectories);
+  semantics.set_moduleDirectory(driver.moduleDirectory);
   if (!anyFiles) {
     driver.measureTree = true;
     driver.dumpUnparse = true;
-    CompileFortran("-", options, driver, semanticsContext);
+    CompileFortran("-", options, driver, semantics);
     return exitStatus;
   }
   for (const auto &path : fortranSources) {
-    std::string relo{CompileFortran(path, options, driver, semanticsContext)};
+    std::string relo{CompileFortran(path, options, driver, semantics)};
     if (!driver.compileOnly && !relo.empty()) {
       relocatables.push_back(relo);
     }

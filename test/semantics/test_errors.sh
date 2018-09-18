@@ -39,10 +39,7 @@ diffs=$temp/diffs
 
 cmd="$CMD $src"
 ( cd $temp; $cmd ) > $log 2>&1
-if [[ $? -ge 128 ]]; then
-  cat $log
-  exit 1
-fi
+[[ $? -ge 128 ]] && exit 1
 
 # $actual has errors from the compiler; $expect has them from !ERROR comments in source
 # Format both as "<line>: <text>" so they can be diffed.

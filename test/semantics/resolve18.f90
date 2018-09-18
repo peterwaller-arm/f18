@@ -33,13 +33,3 @@ contains
     integer :: i
   end subroutine
 end module
-
-subroutine foo
-  !ERROR: Cannot use-associate 'foo'; it is already declared in this scope
-  use m1
-end
-
-subroutine bar
-  !ERROR: Cannot use-associate 'bar'; it is already declared in this scope
-  use m1, bar => foo
-end

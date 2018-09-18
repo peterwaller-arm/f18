@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FORTRAN_SEMANTICS_CANONICALIZE_DO_H_
-#define FORTRAN_SEMANTICS_CANONICALIZE_DO_H_
+#ifndef FORTRAN_SEMANTICS_CHECK_DO_CONCURRENT_H_
+#define FORTRAN_SEMANTICS_CHECK_DO_CONCURRENT_H_
 
-// Converts a LabelDo followed by a sequence of ExecutableConstructs (perhaps
-// logically nested) into the more structured DoConstruct (explicitly nested)
 namespace Fortran::parser {
+class Messages;
 struct Program;
-void CanonicalizeDo(Program &program);
 }  // namespace Fortran::parser
 
-#endif  // FORTRAN_SEMANTICS_CANONICALIZE_DO_H_
+namespace Fortran::semantics {
+
+void CheckDoConcurrentConstraints(parser::Messages &messages, const parser::Program &program);
+
+}  // namespace Fortran::semantics
+#endif  // FORTRAN_SEMANTICS_CHECK_DO_CONCURRENT_H_

@@ -89,13 +89,15 @@ private:
 
 class IntrinsicTypeSpec {
 public:
-  IntrinsicTypeSpec(TypeCategory, int kind);
+  IntrinsicTypeSpec(TypeCategory, int kind = 0);
   const TypeCategory category() const { return category_; }
   const int kind() const { return kind_; }
   bool operator==(const IntrinsicTypeSpec &x) const {
     return category_ == x.category_ && kind_ == x.kind_;
   }
   bool operator!=(const IntrinsicTypeSpec &x) const { return !operator==(x); }
+
+  static int GetDefaultKind(TypeCategory category);
 
 private:
   TypeCategory category_;

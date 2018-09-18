@@ -62,11 +62,8 @@ public:
   // Emit simple types as-is.
   void Unparse(const std::string &x) { Put(x); }
   void Unparse(int x) { Put(std::to_string(x)); }
-  void Unparse(unsigned int x) { Put(std::to_string(x)); }
-  void Unparse(long x) { Put(std::to_string(x)); }
-  void Unparse(unsigned long x) { Put(std::to_string(x)); }
-  void Unparse(long long x) { Put(std::to_string(x)); }
-  void Unparse(unsigned long long x) { Put(std::to_string(x)); }
+  void Unparse(std::uint64_t x) { Put(std::to_string(x)); }
+  void Unparse(std::int64_t x) { Put(std::to_string(x)); }
   void Unparse(char x) { Put(x); }
 
   // Statement labels and ends of lines
@@ -939,7 +936,7 @@ public:
     Word("LOCAL("), Walk(x.v, ", "), Put(')');
   }
   void Unparse(const LocalitySpec::LocalInit &x) {
-    Word("LOCAL_INIT("), Walk(x.v, ", "), Put(')');
+    Word("LOCAL INIT("), Walk(x.v, ", "), Put(')');
   }
   void Unparse(const LocalitySpec::Shared &x) {
     Word("SHARED("), Walk(x.v, ", "), Put(')');

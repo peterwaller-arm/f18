@@ -15,8 +15,7 @@
 
 add_library(FortranSemantics
   attr.cc
-  canonicalize-do.cc
-  default-kinds.cc
+  check-do-concurrent.cc
   expression.cc
   mod-file.cc
   resolve-labels.cc

@@ -70,15 +70,13 @@ CoarrayRef::CoarrayRef(std::vector<const Symbol *> &&c,
   CHECK(!base_.empty());
 }
 
-CoarrayRef &CoarrayRef::set_stat(Expr<SomeInteger> &&v) {
-  CHECK(IsVariable(v));
-  stat_ = CopyableIndirection<Expr<SomeInteger>>::Make(std::move(v));
+CoarrayRef &CoarrayRef::setStat(Variable &&v) {
+  stat_ = CopyableIndirection<Variable>::Make(std::move(v));
   return *this;
 }
 
-CoarrayRef &CoarrayRef::set_team(Expr<SomeInteger> &&v, bool isTeamNumber) {
-  CHECK(IsVariable(v));
-  team_ = CopyableIndirection<Expr<SomeInteger>>::Make(std::move(v));
+CoarrayRef &CoarrayRef::setTeam(Variable &&v, bool isTeamNumber) {
+  team_ = CopyableIndirection<Variable>::Make(std::move(v));
   teamIsTeamNumber_ = isTeamNumber;
   return *this;
 }
@@ -118,7 +116,10 @@ Expr<SubscriptInteger> Substring::last() const {
   }
   return std::visit(
       common::visitors{[](const std::string &s) {
-                         return AsExpr(Constant<SubscriptInteger>{s.size()});
+                         // std::string::size_type isn't convertible to uint64_t
+                         // on Darwin
+                         return AsExpr(Constant<SubscriptInteger>{
+                             static_cast<std::uint64_t>(s.size())});
                        },
           [](const DataRef &x) { return x.LEN(); }},
       u_);
@@ -226,7 +227,7 @@ template<> std::ostream &Emit(std::ostream &o, const Symbol &symbol) {
 }
 
 template<> std::ostream &Emit(std::ostream &o, const IntrinsicProcedure &p) {
-  return o << p;
+  return o << EnumToString(p);
 }
 
 std::ostream &Component::Dump(std::ostream &o) const {
@@ -243,12 +244,12 @@ std::ostream &Triplet::Dump(std::ostream &o) const {
   return o;
 }
 
-std::ostream &Subscript::Dump(std::ostream &o) const { return Emit(o, u); }
+std::ostream &Subscript::Dump(std::ostream &o) const { return Emit(o, u_); }
 
 std::ostream &ArrayRef::Dump(std::ostream &o) const {
-  Emit(o, u);
+  Emit(o, u_);
   char separator{'('};
-  for (const Subscript &ss : subscript) {
+  for (const Subscript &ss : subscript_) {
     ss.Dump(o << separator);
     separator = ',';
   }
@@ -282,7 +283,7 @@ std::ostream &CoarrayRef::Dump(std::ostream &o) const {
   return o << ']';
 }
 
-std::ostream &DataRef::Dump(std::ostream &o) const { return Emit(o, u); }
+std::ostream &DataRef::Dump(std::ostream &o) const { return Emit(o, u_); }
 
 std::ostream &Substring::Dump(std::ostream &o) const {
   Emit(o, u_) << '(';
@@ -294,14 +295,17 @@ std::ostream &ComplexPart::Dump(std::ostream &o) const {
   return complex_.Dump(o) << '%' << EnumToString(part_);
 }
 
+std::ostream &Designator::Dump(std::ostream &o) const { return Emit(o, u_); }
+
 std::ostream &ProcedureDesignator::Dump(std::ostream &o) const {
-  return Emit(o, u);
+  return Emit(o, u_);
 }
 
-std::ostream &UntypedFunctionRef::Dump(std::ostream &o) const {
+template<typename ARG>
+std::ostream &ProcedureRef<ARG>::Dump(std::ostream &o) const {
   Emit(o, proc_);
   char separator{'('};
-  for (const auto &arg : arguments_) {
+  for (const auto &arg : argument_) {
     Emit(o << separator, arg);
     separator = ',';
   }
@@ -311,17 +315,13 @@ std::ostream &UntypedFunctionRef::Dump(std::ostream &o) const {
   return o << ')';
 }
 
-std::ostream &SubroutineCall::Dump(std::ostream &o) const {
-  Emit(o, proc_);
-  char separator{'('};
-  for (const auto &arg : arguments_) {
-    Emit(o << separator, arg);
-    separator = ',';
-  }
-  if (separator == '(') {
-    o << '(';
-  }
-  return o << ')';
+std::ostream &Variable::Dump(std::ostream &o) const { return Emit(o, u_); }
+
+std::ostream &ActualFunctionArg::Dump(std::ostream &o) const {
+  return Emit(o, u_);
+}
+std::ostream &ActualSubroutineArg::Dump(std::ostream &o) const {
+  return Emit(o, u_);
 }
 
 std::ostream &Label::Dump(std::ostream &o) const {
@@ -337,7 +337,7 @@ Expr<SubscriptInteger> ArrayRef::LEN() const {
   return std::visit(
       common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
           [](const Component &x) { return x.LEN(); }},
-      u);
+      u_);
 }
 Expr<SubscriptInteger> CoarrayRef::LEN() const {
   return SymbolLEN(*base_.back());
@@ -346,19 +346,12 @@ Expr<SubscriptInteger> DataRef::LEN() const {
   return std::visit(
       common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
           [](const auto &x) { return x.LEN(); }},
-      u);
+      u_);
 }
 Expr<SubscriptInteger> Substring::LEN() const {
   return AsExpr(
       Extremum<SubscriptInteger>{AsExpr(Constant<SubscriptInteger>{0}),
           last() - first() + AsExpr(Constant<SubscriptInteger>{1})});
-}
-template<typename A> Expr<SubscriptInteger> Designator<A>::LEN() const {
-  return std::visit(
-      common::visitors{[](const Symbol *s) { return SymbolLEN(*s); },
-          [](const Component &c) { return c.LEN(); },
-          [](const auto &x) { return x.LEN(); }},
-      u);
 }
 Expr<SubscriptInteger> ProcedureDesignator::LEN() const {
   return std::visit(
@@ -368,139 +361,7 @@ Expr<SubscriptInteger> ProcedureDesignator::LEN() const {
             CRASH_NO_CASE;
             return AsExpr(Constant<SubscriptInteger>{0});
           }},
-      u);
-}
-Expr<SubscriptInteger> UntypedFunctionRef::LEN() const {
-  // TODO: the results of the intrinsic functions REPEAT and TRIM have
-  // unpredictable lengths; maybe the concept of LEN() has to become dynamic
-  return proc_.LEN();
-}
-
-// Rank()
-int Component::Rank() const {
-  int baseRank{base_->Rank()};
-  int symbolRank{symbol_->Rank()};
-  CHECK(baseRank == 0 || symbolRank == 0);
-  return baseRank + symbolRank;
-}
-int Subscript::Rank() const {
-  return std::visit(common::visitors{[](const IndirectSubscriptIntegerExpr &x) {
-                                       int rank{x->Rank()};
-                                       CHECK(rank <= 1);
-                                       return rank;
-                                     },
-                        [](const Triplet &) { return 1; }},
-      u);
-}
-int ArrayRef::Rank() const {
-  int rank{0};
-  for (std::size_t j{0}; j < subscript.size(); ++j) {
-    rank += subscript[j].Rank();
-  }
-  if (std::holds_alternative<const Symbol *>(u)) {
-    return rank;
-  } else {
-    int baseRank{std::get_if<Component>(&u)->Rank()};
-    CHECK(rank == 0 || baseRank == 0);
-    return baseRank + rank;
-  }
-}
-int CoarrayRef::Rank() const {
-  int rank{0};
-  for (std::size_t j{0}; j < subscript_.size(); ++j) {
-    rank += subscript_[j].Rank();
-  }
-  return rank;
-}
-int DataRef::Rank() const {
-  return std::visit(
-      // g++ 7.2 emits bogus warnings here and below when common::visitors{}
-      // is used with a "const auto &" catch-all member, so a constexpr type
-      // test has to be used instead.
-      [](const auto &x) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(x)>,
-                          const Symbol *>) {
-          return x->Rank();
-        } else {
-          return x.Rank();
-        }
-      },
-      u);
-}
-int Substring::Rank() const {
-  return std::visit(
-      [](const auto &x) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(x)>, std::string>) {
-          return 0;
-        } else {
-          return x.Rank();
-        }
-      },
       u_);
 }
-int ComplexPart::Rank() const { return complex_.Rank(); }
-int ProcedureDesignator::Rank() const {
-  if (const Symbol * symbol{GetSymbol()}) {
-    return symbol->Rank();
-  }
-  if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&u)}) {
-    return intrinsic->rank;
-  }
-  CHECK(!"ProcedureDesignator::Rank(): no case");
-  return 0;
-}
-
-bool ProcedureDesignator::IsElemental() const {
-  if (const Symbol * symbol{GetSymbol()}) {
-    return symbol->attrs().test(semantics::Attr::ELEMENTAL);
-  }
-  if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&u)}) {
-    return intrinsic->isElemental;
-  }
-  CHECK(!"ProcedureDesignator::IsElemental(): no case");
-  return 0;
-}
-
-// GetSymbol
-const Symbol *Component::GetSymbol(bool first) const {
-  return base_->GetSymbol(first);
-}
-const Symbol *ArrayRef::GetSymbol(bool first) const {
-  return std::visit(common::visitors{[](const Symbol *sym) { return sym; },
-                        [=](const Component &component) {
-                          return component.GetSymbol(first);
-                        }},
-      u);
-}
-const Symbol *DataRef::GetSymbol(bool first) const {
-  return std::visit(common::visitors{[](const Symbol *sym) { return sym; },
-                        [=](const auto &x) { return x.GetSymbol(first); }},
-      u);
-}
-const Symbol *Substring::GetSymbol(bool first) const {
-  if (const DataRef * dataRef{std::get_if<DataRef>(&u_)}) {
-    return dataRef->GetSymbol(first);
-  } else {
-    return nullptr;  // substring of character literal
-  }
-}
-const Symbol *ProcedureDesignator::GetSymbol() const {
-  return std::visit(common::visitors{[](const Symbol *sym) { return sym; },
-                        [](const Component &c) { return c.GetSymbol(false); },
-                        [](const auto &) -> const Symbol * { return nullptr; }},
-      u);
-}
-
-std::optional<DynamicType> ProcedureDesignator::GetType() const {
-  if (const Symbol * symbol{GetSymbol()}) {
-    return {GetSymbolType(*symbol)};
-  }
-  if (const auto *intrinsic{std::get_if<SpecificIntrinsic>(&u)}) {
-    return {intrinsic->type};
-  }
-  return std::nullopt;
-}
-
-FOR_EACH_CHARACTER_KIND(template class Designator)
 
 }  // namespace Fortran::evaluate

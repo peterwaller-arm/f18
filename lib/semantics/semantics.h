@@ -15,92 +15,32 @@
 #ifndef FORTRAN_SEMANTICS_SEMANTICS_H_
 #define FORTRAN_SEMANTICS_SEMANTICS_H_
 
-#include "expression.h"
-#include "../evaluate/common.h"
 #include "scope.h"
-#include "../evaluate/intrinsics.h"
 #include "../parser/message.h"
-#include <iosfwd>
 #include <string>
 #include <vector>
+#include <iostream>
 
 namespace Fortran::parser {
-struct Program;
-class CookedSource;
-}  // namespace Fortran::parser
+  struct Program;
+}
 
 namespace Fortran::semantics {
 
-class IntrinsicTypeDefaultKinds;
-
-class SemanticsContext {
-public:
-  SemanticsContext(const IntrinsicTypeDefaultKinds &);
-
-  const IntrinsicTypeDefaultKinds &defaultKinds() const {
-    return defaultKinds_;
-  }
-  const std::vector<std::string> &searchDirectories() const {
-    return searchDirectories_;
-  }
-  const std::string &moduleDirectory() const { return moduleDirectory_; }
-  const bool warningsAreErrors() const { return warningsAreErrors_; }
-  const bool debugExpressions() const { return debugExpressions_; }
-  const evaluate::IntrinsicProcTable &intrinsics() const { return intrinsics_; }
-  Scope &globalScope() { return globalScope_; }
-  parser::Messages &messages() { return messages_; }
-  evaluate::FoldingContext& foldingContext() { return foldingContext_; }
-
-  SemanticsContext &set_searchDirectories(const std::vector<std::string> &x) {
-    searchDirectories_ = x;
-    return *this;
-  }
-  SemanticsContext &set_moduleDirectory(const std::string &x) {
-    moduleDirectory_ = x;
-    return *this;
-  }
-  SemanticsContext &set_warningsAreErrors(bool x) {
-    warningsAreErrors_ = x;
-    return *this;
-  }
-  SemanticsContext &set_debugExpressions(bool x) {
-    debugExpressions_ = x;
-    return *this;
-  }
-
-  bool AnyFatalError() const;
-  template<typename... A> parser::Message &Say(A... args) {
-    return messages_.Say(std::forward<A>(args)...);
-  }
-
-private:
-  const IntrinsicTypeDefaultKinds &defaultKinds_;
-  std::vector<std::string> searchDirectories_;
-  std::string moduleDirectory_{"."s};
-  bool warningsAreErrors_{false};
-  bool debugExpressions_{false};
-  const evaluate::IntrinsicProcTable intrinsics_;
-  Scope globalScope_;
-  parser::Messages messages_;
-  evaluate::FoldingContext foldingContext_;
-};
-
 class Semantics {
 public:
-  explicit Semantics(SemanticsContext &context, parser::Program &program,
-      parser::CookedSource &cooked)
-    : context_{context}, program_{program}, cooked_{cooked} {}
-
-  SemanticsContext &context() const { return context_; }
-  bool Perform();
-  bool AnyFatalError() const { return context_.AnyFatalError(); }
-  void EmitMessages(std::ostream &) const;
+  const parser::Messages &messages() const { return messages_; }
+  Semantics &set_searchDirectories(const std::vector<std::string> &);
+  Semantics &set_moduleDirectory(const std::string &);
+  bool AnyFatalError() const { return messages_.AnyFatalError(); }
+  bool Perform(parser::Program &);
   void DumpSymbols(std::ostream &);
 
 private:
-  SemanticsContext &context_;
-  parser::Program &program_;
-  const parser::CookedSource &cooked_;
+  Scope globalScope_;
+  std::vector<std::string> directories_{"."s};
+  std::string moduleDirectory_{"."s};
+  parser::Messages messages_;
 };
 
 }  // namespace Fortran::semantics

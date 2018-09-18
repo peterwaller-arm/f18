@@ -200,13 +200,12 @@ bool Message::Merge(const Message &that) {
           text_, that.text_);
 }
 
-Message &Message::Attach(Message *m) {
+void Message::Attach(Message *m) {
   if (!attachment_) {
     attachment_ = m;
   } else {
     attachment_->Attach(m);
   }
-  return *this;
 }
 
 bool Message::AtSameLocation(const Message &that) const {
@@ -288,18 +287,6 @@ bool Messages::AnyFatalError() const {
     }
   }
   return false;
-}
-
-ContextualMessages::SavedState::SavedState(
-    ContextualMessages &msgs, CharBlock at)
-  : msgs_{msgs}, at_{msgs.at_} {
-  msgs.at_ = at;
-}
-ContextualMessages::SavedState::~SavedState() { msgs_.at_ = at_; }
-
-ContextualMessages::SavedState ContextualMessages::SetLocation(
-    const CharBlock &at) {
-  return SavedState(*this, at);
 }
 
 }  // namespace Fortran::parser

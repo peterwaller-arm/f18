@@ -184,6 +184,7 @@ struct CharLiteralConstantSubstring;
 struct DataRef;  // R911
 struct StructureComponent;  // R913
 struct CoindexedNamedObject;  // R914
+struct TypeParamInquiry;  // R916
 struct ArrayElement;  // R917
 struct AllocateStmt;  // R927
 struct NullifyStmt;  // R939
@@ -1695,16 +1696,15 @@ struct Expr {
   explicit Expr(FunctionReference &&);
 
   // Filled in later during semantic analysis of the expression.
-  // TODO: May be temporary; remove if caching no longer required.
   common::OwningPointer<evaluate::GenericExprWrapper> typedExpr;
-  CharBlock source;
 
   std::variant<common::Indirection<CharLiteralConstantSubstring>,
       LiteralConstant, common::Indirection<Designator>, ArrayConstructor,
-      StructureConstructor, common::Indirection<FunctionReference>, Parentheses,
-      UnaryPlus, Negate, NOT, PercentLoc, DefinedUnary, Power, Multiply, Divide,
-      Add, Subtract, Concat, LT, LE, EQ, NE, GE, GT, AND, OR, EQV, NEQV, XOR,
-      DefinedBinary, ComplexConstructor>
+      StructureConstructor, common::Indirection<TypeParamInquiry>,
+      common::Indirection<FunctionReference>, Parentheses, UnaryPlus, Negate,
+      NOT, PercentLoc, DefinedUnary, Power, Multiply, Divide, Add, Subtract,
+      Concat, LT, LE, EQ, NE, GE, GT, AND, OR, EQV, NEQV, XOR, DefinedBinary,
+      ComplexConstructor>
       u;
 };
 
@@ -1802,6 +1802,16 @@ struct CoindexedNamedObject {
     : base{std::move(dr)}, imageSelector{std::move(is)} {}
   DataRef base;
   ImageSelector imageSelector;
+};
+
+// R915 complex-part-designator -> designator % RE | designator % IM
+struct ComplexPartDesignator {
+  WRAPPER_CLASS_BOILERPLATE(ComplexPartDesignator, StructureComponent);
+};
+
+// R916 type-param-inquiry -> designator % type-param-name
+struct TypeParamInquiry {
+  WRAPPER_CLASS_BOILERPLATE(TypeParamInquiry, StructureComponent);
 };
 
 // R917 array-element -> data-ref
@@ -2153,7 +2163,7 @@ struct ConcurrentHeader {
 };
 
 // R1130 locality-spec ->
-//         LOCAL ( variable-name-list ) | LOCAL_INIT ( variable-name-list ) |
+//         LOCAL ( variable-name-list ) | LOCAL INIT ( variable-name-list ) |
 //         SHARED ( variable-name-list ) | DEFAULT ( NONE )
 struct LocalitySpec {
   UNION_CLASS_BOILERPLATE(LocalitySpec);
@@ -2202,7 +2212,6 @@ WRAPPER_CLASS(EndDoStmt, std::optional<Name>);
 // CONTINUE; multiple "label DO" loops ending on the same label
 struct DoConstruct {
   TUPLE_CLASS_BOILERPLATE(DoConstruct);
-  bool IsDoConcurrent() const;
   std::tuple<Statement<NonLabelDoStmt>, Block, Statement<EndDoStmt>> t;
 };
 

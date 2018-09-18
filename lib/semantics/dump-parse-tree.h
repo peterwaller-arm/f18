@@ -687,6 +687,7 @@ public:
   NODE(parser, TypeParamDecl)
   NODE(parser, TypeParamDefStmt)
   NODE(common, TypeParamAttr)
+  NODE(parser, TypeParamInquiry)
   NODE(parser, TypeParamSpec)
   NODE(parser, TypeParamValue)
   NODE(parser::TypeParamValue, Deferred)

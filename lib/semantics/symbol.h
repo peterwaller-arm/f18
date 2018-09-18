@@ -120,10 +120,6 @@ public:
   void set_shape(const ArraySpec &shape);
   bool isDummy() const { return isDummy_; }
   bool isArray() const { return !shape_.empty(); }
-  bool isAssumedSize() const {
-    return isDummy() && isArray() && shape_.back().ubound().isAssumed() &&
-        !shape_.back().lbound().isAssumed();
-  }
 
 private:
   bool isDummy_;
@@ -176,16 +172,6 @@ class GenericBindingDetails {};
 
 class FinalProcDetails {};
 
-class MiscDetails {
-public:
-  ENUM_CLASS(Kind, ConstructName);
-  MiscDetails(Kind kind) : kind_{kind} {}
-  Kind kind() const { return kind_; }
-
-private:
-  Kind kind_;
-};
-
 class TypeParamDetails {
 public:
   TypeParamDetails(common::TypeParamAttr attr) : attr_{attr} {}
@@ -228,16 +214,6 @@ public:
 
 private:
   listType occurrences_;
-};
-
-// A symbol host-associated from an enclosing scope.
-class HostAssocDetails {
-public:
-  HostAssocDetails(const Symbol &symbol) : symbol_{&symbol} {}
-  const Symbol &symbol() const { return *symbol_; }
-
-private:
-  const Symbol *symbol_;
 };
 
 class GenericDetails {
@@ -286,28 +262,18 @@ class UnknownDetails {};
 using Details = std::variant<UnknownDetails, MainProgramDetails, ModuleDetails,
     SubprogramDetails, SubprogramNameDetails, EntityDetails,
     ObjectEntityDetails, ProcEntityDetails, DerivedTypeDetails, UseDetails,
-    UseErrorDetails, HostAssocDetails, GenericDetails, ProcBindingDetails,
-    GenericBindingDetails, FinalProcDetails, TypeParamDetails, MiscDetails>;
+    UseErrorDetails, GenericDetails, ProcBindingDetails, GenericBindingDetails,
+    FinalProcDetails, TypeParamDetails>;
 std::ostream &operator<<(std::ostream &, const Details &);
 std::string DetailsToString(const Details &);
 
 class Symbol {
 public:
-  ENUM_CLASS(Flag,
-      Function,  // symbol is a function
-      Subroutine,  // symbol is a subroutine
-      Implicit,  // symbol is implicitly typed
-      ModFile,  // symbol came from .mod file
-      ParentComp,  // symbol is the "parent component" of an extended type
-      LocalityLocal,  // named in LOCAL locality-spec
-      LocalityLocalInit,  // named in LOCAL_INIT locality-spec
-      LocalityShared  // named in SHARED locality-spec
-  );
+  ENUM_CLASS(Flag, Function, Subroutine, Implicit, ModFile);
   using Flags = common::EnumSet<Flag, Flag_enumSize>;
 
   const Scope &owner() const { return *owner_; }
   const SourceName &name() const { return occurrences_.front(); }
-  const SourceName &lastOccurrence() const { return occurrences_.back(); }
   Attrs &attrs() { return attrs_; }
   const Attrs &attrs() const { return attrs_; }
   Flags &flags() { return flags_; }
@@ -367,8 +333,6 @@ public:
 
   bool operator==(const Symbol &that) const { return this == &that; }
   bool operator!=(const Symbol &that) const { return this != &that; }
-
-  int Rank() const;
 
 private:
   const Scope *owner_;

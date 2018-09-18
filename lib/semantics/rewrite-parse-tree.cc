@@ -14,7 +14,6 @@
 
 #include "rewrite-parse-tree.h"
 #include "scope.h"
-#include "semantics.h"
 #include "symbol.h"
 #include "../common/indirection.h"
 #include "../parser/parse-tree-visitor.h"
@@ -45,24 +44,23 @@ public:
   void Post(parser::Variable &x) { ConvertFunctionRef(x); }
   void Post(parser::Expr &x) { ConvertFunctionRef(x); }
 
-  // Name resolution yet implemented:
-  bool Pre(parser::CommonStmt &) { return false; }
-  bool Pre(parser::NamelistStmt &) { return false; }
-  bool Pre(parser::EquivalenceStmt &) { return false; }
-  bool Pre(parser::BindEntity &) { return false; }
-  bool Pre(parser::Keyword &) { return false; }
-  bool Pre(parser::SavedEntity &) { return false; }
-  bool Pre(parser::EntryStmt &) { return false; }
-
   // Don't bother resolving names in end statements.
+  bool Pre(parser::EndAssociateStmt &) { return false; }
   bool Pre(parser::EndBlockDataStmt &) { return false; }
+  bool Pre(parser::EndBlockStmt &) { return false; }
+  bool Pre(parser::EndCriticalStmt &) { return false; }
+  bool Pre(parser::EndDoStmt &) { return false; }
+  bool Pre(parser::EndForallStmt &) { return false; }
   bool Pre(parser::EndFunctionStmt &) { return false; }
+  bool Pre(parser::EndIfStmt &) { return false; }
   bool Pre(parser::EndModuleStmt &) { return false; }
   bool Pre(parser::EndMpSubprogramStmt &) { return false; }
   bool Pre(parser::EndProgramStmt &) { return false; }
+  bool Pre(parser::EndSelectStmt &) { return false; }
   bool Pre(parser::EndSubmoduleStmt &) { return false; }
   bool Pre(parser::EndSubroutineStmt &) { return false; }
   bool Pre(parser::EndTypeStmt &) { return false; }
+  bool Pre(parser::EndWhereStmt &) { return false; }
 
 private:
   using stmtFuncType =
@@ -152,10 +150,11 @@ static void CollectSymbols(const Scope &scope, symbolMap &symbols) {
   }
 }
 
-void RewriteParseTree(SemanticsContext &context, parser::Program &program) {
+void RewriteParseTree(
+    parser::Messages &messages, const Scope &scope, parser::Program &program) {
   symbolMap symbols;
-  CollectSymbols(context.globalScope(), symbols);
-  RewriteMutator mutator{context.messages(), symbols};
+  CollectSymbols(scope, symbols);
+  RewriteMutator mutator{messages, symbols};
   parser::Walk(program, mutator);
 }
 

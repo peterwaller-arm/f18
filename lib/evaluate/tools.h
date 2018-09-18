@@ -31,14 +31,9 @@ template<typename A> Expr<ResultType<A>> AsExpr(A &&x) {
   return Expr<ResultType<A>>{std::move(x)};
 }
 
-template<TypeCategory CAT>
-Expr<SomeKind<CAT>> AsCategoryExpr(Expr<SomeKind<CAT>> &&x) {
-  return std::move(x);
-}
-
-template<typename A>
-Expr<SomeKind<ResultType<A>::category>> AsCategoryExpr(A &&x) {
-  return Expr<SomeKind<ResultType<A>::category>>{AsExpr(std::move(x))};
+template<TypeCategory CAT, int KIND>
+Expr<SomeKind<CAT>> AsCategoryExpr(Expr<Type<CAT, KIND>> &&x) {
+  return Expr<SomeKind<CAT>>{std::move(x)};
 }
 
 template<TypeCategory CAT>
@@ -46,28 +41,26 @@ Expr<SomeKind<CAT>> AsCategoryExpr(SomeKindScalar<CAT> &&x) {
   return std::visit(
       [](auto &&scalar) {
         using Ty = TypeOf<std::decay_t<decltype(scalar)>>;
-        return AsCategoryExpr(Constant<Ty>{std::move(scalar)});
+        return Expr<SomeKind<CAT>>{Expr<Ty>{Constant<Ty>{std::move(scalar)}}};
       },
       x.u);
 }
 
 template<typename A> Expr<SomeType> AsGenericExpr(A &&x) {
-  return Expr<SomeType>{AsCategoryExpr(std::move(x))};
-}
-
-template<> inline Expr<SomeType> AsGenericExpr(Expr<SomeType> &&x) {
-  return std::move(x);
-}
-
-template<> inline Expr<SomeType> AsGenericExpr(BOZLiteralConstant &&x) {
   return Expr<SomeType>{std::move(x)};
+}
+
+template<TypeCategory CAT, int KIND>
+Expr<SomeType> AsGenericExpr(Expr<Type<CAT, KIND>> &&x) {
+  return Expr<SomeType>{AsCategoryExpr(std::move(x))};
 }
 
 template<> inline Expr<SomeType> AsGenericExpr(Constant<SomeType> &&x) {
   return std::visit(
       [](auto &&scalar) {
         using Ty = TypeOf<std::decay_t<decltype(scalar)>>;
-        return AsGenericExpr(Constant<Ty>{std::move(scalar)});
+        return Expr<SomeType>{Expr<SomeKind<Ty::category>>{
+            Expr<Ty>{Constant<Ty>{std::move(scalar)}}}};
       },
       x.value.u);
 }
@@ -76,7 +69,8 @@ template<> inline Expr<SomeType> AsGenericExpr(GenericScalar &&x) {
   return std::visit(
       [](auto &&scalar) {
         using Ty = TypeOf<std::decay_t<decltype(scalar)>>;
-        return AsGenericExpr(Constant<Ty>{std::move(scalar)});
+        return Expr<SomeType>{Expr<SomeKind<Ty::category>>{
+            Expr<Ty>{Constant<Ty>{std::move(scalar)}}}};
       },
       x.u);
 }
@@ -87,7 +81,8 @@ Expr<SomeReal> GetComplexPart(
 template<int KIND>
 Expr<SomeComplex> MakeComplex(Expr<Type<TypeCategory::Real, KIND>> &&re,
     Expr<Type<TypeCategory::Real, KIND>> &&im) {
-  return AsCategoryExpr(ComplexConstructor<KIND>{std::move(re), std::move(im)});
+  return AsCategoryExpr(
+      AsExpr(ComplexConstructor<KIND>{std::move(re), std::move(im)}));
 }
 
 // Creation of conversion expressions can be done to either a known
@@ -96,7 +91,7 @@ Expr<SomeComplex> MakeComplex(Expr<Type<TypeCategory::Real, KIND>> &&re,
 
 template<typename TO, TypeCategory FROMCAT>
 Expr<TO> ConvertToType(Expr<SomeKind<FROMCAT>> &&x) {
-  static_assert(TO::isSpecificIntrinsicType);
+  static_assert(TO::isSpecificType);
   if constexpr (FROMCAT != TO::category) {
     if constexpr (TO::category == TypeCategory::Complex) {
       using Part = typename TO::Part;
@@ -134,7 +129,7 @@ Expr<TO> ConvertToType(Expr<SomeKind<FROMCAT>> &&x) {
 }
 
 template<typename TO> Expr<TO> ConvertToType(BOZLiteralConstant &&x) {
-  static_assert(TO::isSpecificIntrinsicType);
+  static_assert(TO::isSpecificType);
   using Value = typename Constant<TO>::Value;
   if constexpr (TO::category == TypeCategory::Integer) {
     return Expr<TO>{Constant<TO>{Value::ConvertUnsigned(std::move(x)).value}};
@@ -195,34 +190,11 @@ Expr<SomeKind<CAT>> ConvertTo(
       to.u);
 }
 
-// Convert an expression of some known category to a dynamically chosen
-// kind of some category (usually but not necessarily distinct).
-template<TypeCategory TOCAT, typename VALUE> struct ConvertToKindHelper {
-  using Result = std::optional<Expr<SomeKind<TOCAT>>>;
-  static constexpr std::size_t Types{std::tuple_size_v<CategoryTypes<TOCAT>>};
-  ConvertToKindHelper(int k, VALUE &&x) : kind{k}, value{std::move(x)} {}
-  template<std::size_t J> Result Test() {
-    using Ty = std::tuple_element_t<J, CategoryTypes<TOCAT>>;
-    if (kind == Ty::kind) {
-      return std::make_optional(
-          AsCategoryExpr(ConvertToType<Ty>(std::move(value))));
-    }
-    return std::nullopt;
-  }
-  int kind;
-  VALUE value;
-};
-
-template<TypeCategory TOCAT, typename VALUE>
-Expr<SomeKind<TOCAT>> ConvertToKind(int kind, VALUE &&x) {
-  return *common::SearchDynamicTypes(
-      ConvertToKindHelper<TOCAT, VALUE>{kind, std::move(x)});
-}
+template<typename A, int N = 2> using SameExprs = std::array<Expr<A>, N>;
 
 // Given a type category CAT, SameKindExprs<CAT, N> is a variant that
 // holds an arrays of expressions of the same supported kind in that
 // category.
-template<typename A, int N = 2> using SameExprs = std::array<Expr<A>, N>;
 template<int N = 2> struct SameKindExprsHelper {
   template<typename A> using SameExprs = std::array<Expr<A>, N>;
 };
@@ -263,18 +235,17 @@ SameKindExprs<CAT, 2> AsSameKindExprs(
 // same kind of REAL.
 using ConvertRealOperandsResult =
     std::optional<SameKindExprs<TypeCategory::Real, 2>>;
-ConvertRealOperandsResult ConvertRealOperands(parser::ContextualMessages &,
-    Expr<SomeType> &&, Expr<SomeType> &&, int defaultRealKind);
+ConvertRealOperandsResult ConvertRealOperands(
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 
 // Per F'2018 R718, if both components are INTEGER, they are both converted
 // to default REAL and the result is default COMPLEX.  Otherwise, the
 // kind of the result is the kind of most precise REAL component, and the other
 // component is converted if necessary to its type.
+std::optional<Expr<SomeComplex>> ConstructComplex(
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 std::optional<Expr<SomeComplex>> ConstructComplex(parser::ContextualMessages &,
-    Expr<SomeType> &&, Expr<SomeType> &&, int defaultRealKind);
-std::optional<Expr<SomeComplex>> ConstructComplex(parser::ContextualMessages &,
-    std::optional<Expr<SomeType>> &&, std::optional<Expr<SomeType>> &&,
-    int defaultRealKind);
+    std::optional<Expr<SomeType>> &&, std::optional<Expr<SomeType>> &&);
 
 template<typename A> Expr<TypeOf<A>> ScalarConstantToExpr(const A &x) {
   using Ty = TypeOf<A>;
@@ -288,10 +259,10 @@ template<typename A> Expr<TypeOf<A>> ScalarConstantToExpr(const A &x) {
 // for COMPLEX.
 template<template<typename> class OPR, typename SPECIFIC>
 Expr<SPECIFIC> Combine(Expr<SPECIFIC> &&x, Expr<SPECIFIC> &&y) {
-  static_assert(SPECIFIC::isSpecificIntrinsicType);
+  static_assert(SPECIFIC::isSpecificType);
   if constexpr (SPECIFIC::category == TypeCategory::Complex &&
-      (std::is_same_v<OPR<LargestReal>, Add<LargestReal>> ||
-          std::is_same_v<OPR<LargestReal>, Subtract<LargestReal>>)) {
+      (std::is_same_v<OPR<DefaultReal>, Add<DefaultReal>> ||
+          std::is_same_v<OPR<DefaultReal>, Subtract<DefaultReal>>)) {
     static constexpr int kind{SPECIFIC::kind};
     using Part = Type<TypeCategory::Real, kind>;
     return AsExpr(ComplexConstructor<kind>{
@@ -326,24 +297,19 @@ Expr<SomeKind<CAT>> PromoteAndCombine(
 // typeless literal operands and with REAL/COMPLEX exponentiation to INTEGER
 // powers.
 template<template<typename> class OPR>
-std::optional<Expr<SomeType>> NumericOperation(parser::ContextualMessages &,
-    Expr<SomeType> &&, Expr<SomeType> &&, int defaultRealKind);
+std::optional<Expr<SomeType>> NumericOperation(
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 
 extern template std::optional<Expr<SomeType>> NumericOperation<Power>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 extern template std::optional<Expr<SomeType>> NumericOperation<Multiply>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 extern template std::optional<Expr<SomeType>> NumericOperation<Divide>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 extern template std::optional<Expr<SomeType>> NumericOperation<Add>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 extern template std::optional<Expr<SomeType>> NumericOperation<Subtract>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 
 std::optional<Expr<SomeType>> Negation(
     parser::ContextualMessages &, Expr<SomeType> &&);
@@ -439,7 +405,8 @@ struct TypeKindVisitor {
   template<std::size_t J> Result Test() {
     using Ty = std::tuple_element_t<J, CategoryTypes<CAT>>;
     if (kind == Ty::kind) {
-      return AsGenericExpr(TEMPLATE<Ty>{std::move(value)});
+      return AsGenericExpr(
+          AsCategoryExpr(AsExpr(TEMPLATE<Ty>{std::move(value)})));
     }
     return std::nullopt;
   }

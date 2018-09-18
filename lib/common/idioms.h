@@ -32,7 +32,6 @@
 #include <functional>
 #include <list>
 #include <optional>
-#include <string>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -107,10 +106,6 @@ template<typename... LAMBDAS> visitors(LAMBDAS... x)->visitors<LAMBDAS...>;
   } \
   template<typename A> constexpr bool T{class_trait_ns_##T::trait_value<A>()};
 
-#if !defined ATTRIBUTE_UNUSED && (__clang__ || __GNUC__)
-#define ATTRIBUTE_UNUSED __attribute__((unused))
-#endif
-
 // Define enum class NAME with the given enumerators, a static
 // function EnumToString() that maps enumerators to std::string,
 // and a constant NAME_enumSize that captures the number of items
@@ -125,11 +120,11 @@ template<typename A> struct ListItemCount {
 
 #define ENUM_CLASS(NAME, ...) \
   enum class NAME { __VA_ARGS__ }; \
-  ATTRIBUTE_UNUSED static constexpr std::size_t NAME##_enumSize{[] { \
+  static constexpr std::size_t NAME##_enumSize{[] { \
     enum { __VA_ARGS__ }; \
     return Fortran::common::ListItemCount{__VA_ARGS__}.value; \
   }()}; \
-  ATTRIBUTE_UNUSED static inline std::string EnumToString(NAME e) { \
+  static inline std::string EnumToString(NAME e) { \
     return Fortran::common::EnumIndexToString( \
         static_cast<int>(e), #__VA_ARGS__); \
   }

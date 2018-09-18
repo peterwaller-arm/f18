@@ -56,7 +56,7 @@ template<typename RESULT>
 auto ExpressionBase<RESULT>::Fold(FoldingContext &context)
     -> std::optional<Constant<Result>> {
   using Const = Constant<Result>;
-  if constexpr (Result::isSpecificIntrinsicType) {
+  if constexpr (Result::isSpecificType) {
     // Folding an expression of known type category and kind.
     return std::visit(
         [&](auto &x) -> std::optional<Const> {
@@ -97,7 +97,7 @@ auto ExpressionBase<RESULT>::Fold(FoldingContext &context)
         [&](auto &x) -> std::optional<Const> {
           if constexpr (IsFoldableTrait<std::decay_t<decltype(x)>>) {
             if (auto c{x.Fold(context)}) {
-              if constexpr (ResultType<decltype(*c)>::isSpecificIntrinsicType) {
+              if constexpr (ResultType<decltype(*c)>::isSpecificType) {
                 return {Const{c->value}};
               } else {
                 return {Const{common::MoveVariant<GenericScalar>(c->value.u)}};
@@ -463,17 +463,15 @@ template<typename T> std::ostream &Constant<T>::Dump(std::ostream &o) const {
 
 template<typename RESULT>
 std::ostream &ExpressionBase<RESULT>::Dump(std::ostream &o) const {
-  std::visit(common::visitors{[&](const BOZLiteralConstant &x) {
-                                o << "Z'" << x.Hexadecimal() << "'";
-                              },
-                 [&](const CopyableIndirection<Substring> &s) { s->Dump(o); },
-                 [&](const auto &x) { x.Dump(o); }},
+  std::visit(
+      common::visitors{[&](const BOZLiteralConstant &x) {
+                         o << "Z'" << x.Hexadecimal() << "'";
+                       },
+          [&](const DataReference<Result> &dr) { dr.reference->Dump(o); },
+          [&](const FunctionReference<Result> &fr) { fr.reference->Dump(o); },
+          [&](const CopyableIndirection<Substring> &s) { s->Dump(o); },
+          [&](const auto &x) { x.Dump(o); }},
       derived().u);
-  return o;
-}
-
-std::ostream &Expr<SomeDerived>::Dump(std::ostream &o) const {
-  std::visit([&](const auto &x) { x.Dump(o); }, u);
   return o;
 }
 
@@ -481,31 +479,39 @@ template<int KIND>
 Expr<SubscriptInteger> Expr<Type<TypeCategory::Character, KIND>>::LEN() const {
   return std::visit(
       common::visitors{[](const Constant<Result> &c) {
-                         return AsExpr(
-                             Constant<SubscriptInteger>{c.value.size()});
+                         // std::string::size_type isn't convertible to uint64_t
+                         // on Darwin
+                         return AsExpr(Constant<SubscriptInteger>{
+                             static_cast<std::uint64_t>(c.value.size())});
                        },
-          [](const Parentheses<Result> &x) { return x.left().LEN(); },
           [](const Concat<KIND> &c) {
-            return c.left().LEN() + c.right().LEN();
+            return c.left().LEN() + c.template right().LEN();
           },
           [](const Extremum<Result> &c) {
             return Expr<SubscriptInteger>{
                 Extremum<SubscriptInteger>{c.left().LEN(), c.right().LEN()}};
           },
-          [](const Designator<Result> &dr) { return dr.LEN(); },
-          [](const FunctionRef<Result> &fr) { return fr.LEN(); }},
+          [](const DataReference<Result> &dr) { return dr.reference->LEN(); },
+          [](const CopyableIndirection<Substring> &ss) { return ss->LEN(); },
+          [](const FunctionReference<Result> &fr) {
+            return fr.reference->proc().LEN();
+          }},
       u);
 }
 
 template<typename RESULT>
 auto ExpressionBase<RESULT>::ScalarValue() const
     -> std::optional<Scalar<Result>> {
-  if constexpr (Result::isSpecificIntrinsicType) {
+  if constexpr (Result::isSpecificType) {
     if (auto *c{std::get_if<Constant<Result>>(&derived().u)}) {
       return {c->value};
     }
-    if (auto *p{std::get_if<Parentheses<Result>>(&derived().u)}) {
-      return p->left().ScalarValue();
+    // TODO: every specifically-typed Expr should support Parentheses
+    if constexpr (common::HasMember<Parentheses<Result>,
+                      decltype(derived().u)>) {
+      if (auto *p{std::get_if<Parentheses<Result>>(&derived().u)}) {
+        return p->left().ScalarValue();
+      }
     }
   } else if constexpr (std::is_same_v<Result, SomeType>) {
     return std::visit(
@@ -513,9 +519,8 @@ auto ExpressionBase<RESULT>::ScalarValue() const
             [](const BOZLiteralConstant &) -> std::optional<Scalar<Result>> {
               return std::nullopt;
             },
-            [](const Expr<SomeDerived> &) -> std::optional<Scalar<Result>> {
-              return std::nullopt;
-            },
+            [](const Expr<Type<TypeCategory::Derived>> &)
+                -> std::optional<Scalar<Result>> { return std::nullopt; },
             [](const auto &catEx) -> std::optional<Scalar<Result>> {
               if (auto cv{catEx.ScalarValue()}) {
                 // *cv is SomeKindScalar<CAT> for some category; rewrap it.
@@ -539,55 +544,81 @@ auto ExpressionBase<RESULT>::ScalarValue() const
 
 Expr<SomeType>::~Expr() {}
 
-template<typename A>
-std::optional<DynamicType> ExpressionBase<A>::GetType() const {
-  if constexpr (Result::isSpecificIntrinsicType) {
-    return Result::GetType();
-  } else {
-    return std::visit(
-        [](const auto &x) -> std::optional<DynamicType> {
-          if constexpr (!std::is_same_v<std::decay_t<decltype(x)>,
-                            BOZLiteralConstant>) {
-            return x.GetType();
-          }
-          return std::nullopt;  // typeless -> no type
-        },
-        derived().u);
-  }
-}
-
-std::optional<DynamicType> Expr<SomeDerived>::GetType() const {
-  return std::visit([](const auto &x) { return x.GetType(); }, u);
-}
-
-template<typename A> int ExpressionBase<A>::Rank() const {
-  return std::visit(
-      [](const auto &x) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(x)>,
-                          BOZLiteralConstant>) {
-          return 0;
-        } else {
-          return x.Rank();
-        }
-      },
-      derived().u);
-}
-
-int Expr<SomeDerived>::Rank() const {
-  return std::visit([](const auto &x) { return x.Rank(); }, u);
-}
-
 // Template instantiations to resolve the "extern template" declarations
 // that appear in expression.h.
 
-FOR_EACH_INTRINSIC_KIND(template class Expr)
-FOR_EACH_CATEGORY_TYPE(template class Expr)
-FOR_EACH_INTEGER_KIND(template struct Relational)
-FOR_EACH_REAL_KIND(template struct Relational)
-FOR_EACH_CHARACTER_KIND(template struct Relational)
+template class Expr<Type<TypeCategory::Integer, 1>>;
+template class Expr<Type<TypeCategory::Integer, 2>>;
+template class Expr<Type<TypeCategory::Integer, 4>>;
+template class Expr<Type<TypeCategory::Integer, 8>>;
+template class Expr<Type<TypeCategory::Integer, 16>>;
+template class Expr<Type<TypeCategory::Real, 2>>;
+template class Expr<Type<TypeCategory::Real, 4>>;
+template class Expr<Type<TypeCategory::Real, 8>>;
+template class Expr<Type<TypeCategory::Real, 10>>;
+template class Expr<Type<TypeCategory::Real, 16>>;
+template class Expr<Type<TypeCategory::Complex, 2>>;
+template class Expr<Type<TypeCategory::Complex, 4>>;
+template class Expr<Type<TypeCategory::Complex, 8>>;
+template class Expr<Type<TypeCategory::Complex, 10>>;
+template class Expr<Type<TypeCategory::Complex, 16>>;
+template class Expr<Type<TypeCategory::Character, 1>>;
+template class Expr<Type<TypeCategory::Character, 2>>;
+template class Expr<Type<TypeCategory::Character, 4>>;
+template class Expr<Type<TypeCategory::Logical, 1>>;
+template class Expr<Type<TypeCategory::Logical, 2>>;
+template class Expr<Type<TypeCategory::Logical, 4>>;
+template class Expr<Type<TypeCategory::Logical, 8>>;
+template class Expr<SomeInteger>;
+template class Expr<SomeReal>;
+template class Expr<SomeComplex>;
+template class Expr<SomeCharacter>;
+template class Expr<SomeLogical>;
+template class Expr<SomeType>;
+
+template struct Relational<Type<TypeCategory::Integer, 1>>;
+template struct Relational<Type<TypeCategory::Integer, 2>>;
+template struct Relational<Type<TypeCategory::Integer, 4>>;
+template struct Relational<Type<TypeCategory::Integer, 8>>;
+template struct Relational<Type<TypeCategory::Integer, 16>>;
+template struct Relational<Type<TypeCategory::Real, 2>>;
+template struct Relational<Type<TypeCategory::Real, 4>>;
+template struct Relational<Type<TypeCategory::Real, 8>>;
+template struct Relational<Type<TypeCategory::Real, 10>>;
+template struct Relational<Type<TypeCategory::Real, 16>>;
+template struct Relational<Type<TypeCategory::Character, 1>>;
+template struct Relational<Type<TypeCategory::Character, 2>>;
+template struct Relational<Type<TypeCategory::Character, 4>>;
 template struct Relational<SomeType>;
-FOR_EACH_INTRINSIC_KIND(template struct ExpressionBase)
-FOR_EACH_CATEGORY_TYPE(template struct ExpressionBase)
+
+template struct ExpressionBase<Type<TypeCategory::Integer, 1>>;
+template struct ExpressionBase<Type<TypeCategory::Integer, 2>>;
+template struct ExpressionBase<Type<TypeCategory::Integer, 4>>;
+template struct ExpressionBase<Type<TypeCategory::Integer, 8>>;
+template struct ExpressionBase<Type<TypeCategory::Integer, 16>>;
+template struct ExpressionBase<Type<TypeCategory::Real, 2>>;
+template struct ExpressionBase<Type<TypeCategory::Real, 4>>;
+template struct ExpressionBase<Type<TypeCategory::Real, 8>>;
+template struct ExpressionBase<Type<TypeCategory::Real, 10>>;
+template struct ExpressionBase<Type<TypeCategory::Real, 16>>;
+template struct ExpressionBase<Type<TypeCategory::Complex, 2>>;
+template struct ExpressionBase<Type<TypeCategory::Complex, 4>>;
+template struct ExpressionBase<Type<TypeCategory::Complex, 8>>;
+template struct ExpressionBase<Type<TypeCategory::Complex, 10>>;
+template struct ExpressionBase<Type<TypeCategory::Complex, 16>>;
+template struct ExpressionBase<Type<TypeCategory::Character, 1>>;
+template struct ExpressionBase<Type<TypeCategory::Character, 2>>;
+template struct ExpressionBase<Type<TypeCategory::Character, 4>>;
+template struct ExpressionBase<Type<TypeCategory::Logical, 1>>;
+template struct ExpressionBase<Type<TypeCategory::Logical, 2>>;
+template struct ExpressionBase<Type<TypeCategory::Logical, 4>>;
+template struct ExpressionBase<Type<TypeCategory::Logical, 8>>;
+template struct ExpressionBase<SomeInteger>;
+template struct ExpressionBase<SomeReal>;
+template struct ExpressionBase<SomeComplex>;
+template struct ExpressionBase<SomeCharacter>;
+template struct ExpressionBase<SomeLogical>;
+template struct ExpressionBase<SomeType>;
 
 }  // namespace Fortran::evaluate
 

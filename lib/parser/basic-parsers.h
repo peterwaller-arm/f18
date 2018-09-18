@@ -1256,7 +1256,7 @@ inline constexpr auto localRecovery(
 // nextCh is a parser that succeeds if the parsing state is not
 // at the end of its input, returning the next character location and
 // advancing the parse when it does so.
-struct NextCh {
+constexpr struct NextCh {
   using resultType = const char *;
   constexpr NextCh() {}
   std::optional<const char *> Parse(ParseState &state) const {
@@ -1266,9 +1266,7 @@ struct NextCh {
     state.Say("end of file"_err_en_US);
     return std::nullopt;
   }
-};
-
-constexpr NextCh nextCh;
+} nextCh;
 
 // If a is a parser for some nonstandard language feature LF, extension<LF>(a)
 // is a parser that optionally enabled, sets a strict conformance violation

@@ -25,18 +25,17 @@ namespace Fortran::evaluate {
 // Conversions of complex component expressions to REAL.
 ConvertRealOperandsResult ConvertRealOperands(
     parser::ContextualMessages &messages, Expr<SomeType> &&x,
-    Expr<SomeType> &&y, int defaultRealKind) {
+    Expr<SomeType> &&y) {
   return std::visit(
-      common::visitors{[&](Expr<SomeInteger> &&ix, Expr<SomeInteger> &&iy)
-                           -> ConvertRealOperandsResult {
-                         // Can happen in a CMPLX() constructor.  Per F'2018,
-                         // both integer operands are converted to default REAL.
-                         return {AsSameKindExprs<TypeCategory::Real>(
-                             ConvertToKind<TypeCategory::Real>(
-                                 defaultRealKind, std::move(ix)),
-                             ConvertToKind<TypeCategory::Real>(
-                                 defaultRealKind, std::move(iy)))};
-                       },
+      common::visitors{
+          [&](Expr<SomeInteger> &&ix,
+              Expr<SomeInteger> &&iy) -> ConvertRealOperandsResult {
+            // Can happen in a CMPLX() constructor.  Per F'2018,
+            // both integer operands are converted to default REAL.
+            return {AsSameKindExprs<TypeCategory::Real>(
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(ix))),
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(iy))))};
+          },
           [&](Expr<SomeInteger> &&ix,
               Expr<SomeReal> &&ry) -> ConvertRealOperandsResult {
             return {AsSameKindExprs<TypeCategory::Real>(
@@ -55,18 +54,14 @@ ConvertRealOperandsResult ConvertRealOperands(
           [&](Expr<SomeInteger> &&ix,
               BOZLiteralConstant &&by) -> ConvertRealOperandsResult {
             return {AsSameKindExprs<TypeCategory::Real>(
-                ConvertToKind<TypeCategory::Real>(
-                    defaultRealKind, std::move(ix)),
-                ConvertToKind<TypeCategory::Real>(
-                    defaultRealKind, std::move(by)))};
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(ix))),
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(by))))};
           },
           [&](BOZLiteralConstant &&bx,
               Expr<SomeInteger> &&iy) -> ConvertRealOperandsResult {
             return {AsSameKindExprs<TypeCategory::Real>(
-                ConvertToKind<TypeCategory::Real>(
-                    defaultRealKind, std::move(bx)),
-                ConvertToKind<TypeCategory::Real>(
-                    defaultRealKind, std::move(iy)))};
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(bx))),
+                AsCategoryExpr(ConvertToType<DefaultReal>(std::move(iy))))};
           },
           [&](Expr<SomeReal> &&rx,
               BOZLiteralConstant &&by) -> ConvertRealOperandsResult {
@@ -110,22 +105,22 @@ std::optional<Expr<SomeType>> MixedRealLeft(
       [&](auto &&rxk) -> Expr<SomeReal> {
         using resultType = ResultType<decltype(rxk)>;
         if constexpr (std::is_same_v<OPR<resultType>, Power<resultType>>) {
-          return AsCategoryExpr(
-              RealToIntPower<resultType>{std::move(rxk), std::move(iy)});
+          return AsCategoryExpr(AsExpr(
+              RealToIntPower<resultType>{std::move(rxk), std::move(iy)}));
         }
         // G++ 8.1.0 emits bogus warnings about missing return statements if
         // this statement is wrapped in an "else", as it should be.
-        return AsCategoryExpr(OPR<resultType>{
-            std::move(rxk), ConvertToType<resultType>(std::move(iy))});
+        return AsCategoryExpr(AsExpr(OPR<resultType>{
+            std::move(rxk), ConvertToType<resultType>(std::move(iy))}));
       },
       std::move(rx.u)));
 }
 
 std::optional<Expr<SomeComplex>> ConstructComplex(
     parser::ContextualMessages &messages, Expr<SomeType> &&real,
-    Expr<SomeType> &&imaginary, int defaultRealKind) {
+    Expr<SomeType> &&imaginary) {
   if (auto converted{ConvertRealOperands(
-          messages, std::move(real), std::move(imaginary), defaultRealKind)}) {
+          messages, std::move(real), std::move(imaginary))}) {
     return {std::visit(
         [](auto &&pair) {
           return MakeComplex(std::move(pair[0]), std::move(pair[1]));
@@ -137,10 +132,10 @@ std::optional<Expr<SomeComplex>> ConstructComplex(
 
 std::optional<Expr<SomeComplex>> ConstructComplex(
     parser::ContextualMessages &messages, std::optional<Expr<SomeType>> &&real,
-    std::optional<Expr<SomeType>> &&imaginary, int defaultRealKind) {
+    std::optional<Expr<SomeType>> &&imaginary) {
   if (auto parts{common::AllPresent(std::move(real), std::move(imaginary))}) {
     return ConstructComplex(messages, std::move(std::get<0>(*parts)),
-        std::move(std::get<1>(*parts)), defaultRealKind);
+        std::move(std::get<1>(*parts)));
   }
   return std::nullopt;
 }
@@ -149,7 +144,7 @@ Expr<SomeReal> GetComplexPart(const Expr<SomeComplex> &z, bool isImaginary) {
   return std::visit(
       [&](const auto &zk) {
         static constexpr int kind{ResultType<decltype(zk)>::kind};
-        return AsCategoryExpr(ComplexComponent<kind>{isImaginary, zk});
+        return AsCategoryExpr(AsExpr(ComplexComponent<kind>{isImaginary, zk}));
       },
       z.u);
 }
@@ -160,35 +155,34 @@ Expr<SomeReal> GetComplexPart(const Expr<SomeComplex> &z, bool isImaginary) {
 template<template<typename> class OPR, TypeCategory RCAT>
 std::optional<Expr<SomeType>> MixedComplexLeft(
     parser::ContextualMessages &messages, Expr<SomeComplex> &&zx,
-    Expr<SomeKind<RCAT>> &&iry, int defaultRealKind) {
+    Expr<SomeKind<RCAT>> &&iry) {
   Expr<SomeReal> zr{GetComplexPart(zx, false)};
   Expr<SomeReal> zi{GetComplexPart(zx, true)};
-  if constexpr (std::is_same_v<OPR<LargestReal>, Add<LargestReal>> ||
-      std::is_same_v<OPR<LargestReal>, Subtract<LargestReal>>) {
+  if constexpr (std::is_same_v<OPR<DefaultReal>, Add<DefaultReal>> ||
+      std::is_same_v<OPR<DefaultReal>, Subtract<DefaultReal>>) {
     // (a,b) + x -> (a+x, b)
     // (a,b) - x -> (a-x, b)
-    if (std::optional<Expr<SomeType>> rr{
-            NumericOperation<OPR>(messages, AsGenericExpr(std::move(zr)),
-                AsGenericExpr(std::move(iry)), defaultRealKind)}) {
-      return Package(ConstructComplex(messages, std::move(*rr),
-          AsGenericExpr(std::move(zi)), defaultRealKind));
+    if (std::optional<Expr<SomeType>> rr{NumericOperation<OPR>(messages,
+            AsGenericExpr(std::move(zr)), AsGenericExpr(std::move(iry)))}) {
+      return Package(ConstructComplex(
+          messages, std::move(*rr), AsGenericExpr(std::move(zi))));
     }
-  } else if constexpr (std::is_same_v<OPR<LargestReal>,
-                           Multiply<LargestReal>> ||
-      std::is_same_v<OPR<LargestReal>, Divide<LargestReal>>) {
+  } else if constexpr (std::is_same_v<OPR<DefaultReal>,
+                           Multiply<DefaultReal>> ||
+      std::is_same_v<OPR<DefaultReal>, Divide<DefaultReal>>) {
     // (a,b) * x -> (a*x, b*x)
     // (a,b) / x -> (a/x, b/x)
     auto copy{iry};
-    auto rr{NumericOperation<Multiply>(messages, AsGenericExpr(std::move(zr)),
-        AsGenericExpr(std::move(iry)), defaultRealKind)};
+    auto rr{NumericOperation<Multiply>(
+        messages, AsGenericExpr(std::move(zr)), AsGenericExpr(std::move(iry)))};
     auto ri{NumericOperation<Multiply>(messages, AsGenericExpr(std::move(zi)),
-        AsGenericExpr(std::move(copy)), defaultRealKind)};
+        AsGenericExpr(std::move(copy)))};
     if (auto parts{common::AllPresent(std::move(rr), std::move(ri))}) {
       return Package(ConstructComplex(messages, std::move(std::get<0>(*parts)),
-          std::move(std::get<1>(*parts)), defaultRealKind));
+          std::move(std::get<1>(*parts))));
     }
   } else if constexpr (RCAT == TypeCategory::Integer &&
-      std::is_same_v<OPR<LargestReal>, Power<LargestReal>>) {
+      std::is_same_v<OPR<DefaultReal>, Power<DefaultReal>>) {
     // COMPLEX**INTEGER is a special case that doesn't convert the exponent.
     static_assert(RCAT == TypeCategory::Integer);
     return Package(std::visit(
@@ -214,23 +208,21 @@ std::optional<Expr<SomeType>> MixedComplexLeft(
 template<template<typename> class OPR, TypeCategory LCAT>
 std::optional<Expr<SomeType>> MixedComplexRight(
     parser::ContextualMessages &messages, Expr<SomeKind<LCAT>> &&irx,
-    Expr<SomeComplex> &&zy, int defaultRealKind) {
-  if constexpr (std::is_same_v<OPR<LargestReal>, Add<LargestReal>> ||
-      std::is_same_v<OPR<LargestReal>, Multiply<LargestReal>>) {
+    Expr<SomeComplex> &&zy) {
+  if constexpr (std::is_same_v<OPR<DefaultReal>, Add<DefaultReal>> ||
+      std::is_same_v<OPR<DefaultReal>, Multiply<DefaultReal>>) {
     // x + (a,b) -> (a,b) + x -> (a+x, b)
     // x * (a,b) -> (a,b) * x -> (a*x, b*x)
-    return MixedComplexLeft<Add, LCAT>(
-        messages, std::move(zy), std::move(irx), defaultRealKind);
-  } else if constexpr (std::is_same_v<OPR<LargestReal>,
-                           Subtract<LargestReal>>) {
+    return MixedComplexLeft<Add, LCAT>(messages, std::move(zy), std::move(irx));
+  } else if constexpr (std::is_same_v<OPR<DefaultReal>,
+                           Subtract<DefaultReal>>) {
     // x - (a,b) -> (x-a, -b)
     Expr<SomeReal> zr{GetComplexPart(zy, false)};
     Expr<SomeReal> zi{GetComplexPart(zy, true)};
-    if (std::optional<Expr<SomeType>> rr{
-            NumericOperation<Subtract>(messages, AsGenericExpr(std::move(irx)),
-                AsGenericExpr(std::move(zr)), defaultRealKind)}) {
-      return Package(ConstructComplex(messages, std::move(*rr),
-          AsGenericExpr(-std::move(zi)), defaultRealKind));
+    if (std::optional<Expr<SomeType>> rr{NumericOperation<Subtract>(messages,
+            AsGenericExpr(std::move(irx)), AsGenericExpr(std::move(zr)))}) {
+      return Package(ConstructComplex(
+          messages, std::move(*rr), AsGenericExpr(-std::move(zi))));
     }
   } else {
     // x / (a,b) -> (x,0) / (a,b)
@@ -246,7 +238,7 @@ std::optional<Expr<SomeType>> MixedComplexRight(
 template<template<typename> class OPR>
 std::optional<Expr<SomeType>> NumericOperation(
     parser::ContextualMessages &messages, Expr<SomeType> &&x,
-    Expr<SomeType> &&y, int defaultRealKind) {
+    Expr<SomeType> &&y) {
   return std::visit(
       common::visitors{[](Expr<SomeInteger> &&ix, Expr<SomeInteger> &&iy) {
                          return Package(
@@ -265,9 +257,9 @@ std::optional<Expr<SomeType>> NumericOperation(
             return Package(std::visit(
                 [&](auto &&ryk) -> Expr<SomeReal> {
                   using resultType = ResultType<decltype(ryk)>;
-                  return AsCategoryExpr(
+                  return AsCategoryExpr(AsExpr(
                       OPR<resultType>{ConvertToType<resultType>(std::move(ix)),
-                          std::move(ryk)});
+                          std::move(ryk)}));
                 },
                 std::move(ry.u)));
           },
@@ -278,38 +270,36 @@ std::optional<Expr<SomeType>> NumericOperation(
           },
           [&](Expr<SomeComplex> &&zx, Expr<SomeInteger> &&zy) {
             return MixedComplexLeft<OPR>(
-                messages, std::move(zx), std::move(zy), defaultRealKind);
+                messages, std::move(zx), std::move(zy));
           },
           [&](Expr<SomeComplex> &&zx, Expr<SomeReal> &&zy) {
             return MixedComplexLeft<OPR>(
-                messages, std::move(zx), std::move(zy), defaultRealKind);
+                messages, std::move(zx), std::move(zy));
           },
           [&](Expr<SomeInteger> &&zx, Expr<SomeComplex> &&zy) {
             return MixedComplexRight<OPR>(
-                messages, std::move(zx), std::move(zy), defaultRealKind);
+                messages, std::move(zx), std::move(zy));
           },
           [&](Expr<SomeReal> &&zx, Expr<SomeComplex> &&zy) {
             return MixedComplexRight<OPR>(
-                messages, std::move(zx), std::move(zy), defaultRealKind);
+                messages, std::move(zx), std::move(zy));
           },
           // Operations with one typeless operand
           [&](BOZLiteralConstant &&bx, Expr<SomeInteger> &&iy) {
             return NumericOperation<OPR>(messages,
-                AsGenericExpr(ConvertTo(iy, std::move(bx))), std::move(y),
-                defaultRealKind);
+                AsGenericExpr(ConvertTo(iy, std::move(bx))), std::move(y));
           },
           [&](BOZLiteralConstant &&bx, Expr<SomeReal> &&ry) {
             return NumericOperation<OPR>(messages,
-                AsGenericExpr(ConvertTo(ry, std::move(bx))), std::move(y),
-                defaultRealKind);
+                AsGenericExpr(ConvertTo(ry, std::move(bx))), std::move(y));
           },
           [&](Expr<SomeInteger> &&ix, BOZLiteralConstant &&by) {
             return NumericOperation<OPR>(messages, std::move(x),
-                AsGenericExpr(ConvertTo(ix, std::move(by))), defaultRealKind);
+                AsGenericExpr(ConvertTo(ix, std::move(by))));
           },
           [&](Expr<SomeReal> &&rx, BOZLiteralConstant &&by) {
             return NumericOperation<OPR>(messages, std::move(x),
-                AsGenericExpr(ConvertTo(rx, std::move(by))), defaultRealKind);
+                AsGenericExpr(ConvertTo(rx, std::move(by))));
           },
           // Default case
           [&](auto &&, auto &&) {
@@ -321,20 +311,15 @@ std::optional<Expr<SomeType>> NumericOperation(
 }
 
 template std::optional<Expr<SomeType>> NumericOperation<Power>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 template std::optional<Expr<SomeType>> NumericOperation<Multiply>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 template std::optional<Expr<SomeType>> NumericOperation<Divide>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 template std::optional<Expr<SomeType>> NumericOperation<Add>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 template std::optional<Expr<SomeType>> NumericOperation<Subtract>(
-    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&,
-    int defaultRealKind);
+    parser::ContextualMessages &, Expr<SomeType> &&, Expr<SomeType> &&);
 
 std::optional<Expr<SomeType>> Negation(
     parser::ContextualMessages &messages, Expr<SomeType> &&x) {
@@ -357,7 +342,7 @@ std::optional<Expr<SomeType>> Negation(
             messages.Say("LOGICAL cannot be negated"_err_en_US);
             return NoExpr();
           },
-          [&](Expr<SomeDerived> &&x) {
+          [&](Expr<Type<TypeCategory::Derived>> &&x) {
             // TODO: defined operator
             messages.Say("derived type cannot be negated"_err_en_US);
             return NoExpr();
@@ -378,7 +363,7 @@ Expr<SomeLogical> LogicalNegation(Expr<SomeLogical> &&x) {
 template<typename T>
 Expr<LogicalResult> PackageRelation(
     RelationalOperator opr, Expr<T> &&x, Expr<T> &&y) {
-  static_assert(T::isSpecificIntrinsicType);
+  static_assert(T::isSpecificType);
   return Expr<LogicalResult>{
       Relational<SomeType>{Relational<T>{opr, std::move(x), std::move(y)}}};
 }

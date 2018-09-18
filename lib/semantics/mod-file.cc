@@ -14,7 +14,6 @@
 
 #include "mod-file.h"
 #include "scope.h"
-#include "semantics.h"
 #include "symbol.h"
 #include "../parser/parsing.h"
 #include <algorithm>
@@ -54,14 +53,11 @@ static bool FileContentsMatch(
 static std::string GetHeader(const std::string &);
 static std::size_t GetFileSize(const std::string &);
 
-void ModFileWriter::WriteAll() {
-  WriteAll(context_.globalScope());
-}
-
-void ModFileWriter::WriteAll(const Scope &scope) {
+bool ModFileWriter::WriteAll(const Scope &scope) {
   for (const auto &child : scope.children()) {
     WriteOne(child);
   }
+  return errors_.empty();
 }
 
 void ModFileWriter::WriteOne(const Scope &scope) {
@@ -78,11 +74,11 @@ void ModFileWriter::WriteOne(const Scope &scope) {
 void ModFileWriter::Write(const Symbol &symbol) {
   auto *ancestor{symbol.get<ModuleDetails>().ancestor()};
   auto ancestorName{ancestor ? ancestor->name().ToString() : ""s};
-  auto path{ModFilePath(context_.moduleDirectory(), symbol.name(), ancestorName)};
+  auto path{ModFilePath(dir_, symbol.name(), ancestorName)};
   PutSymbols(*symbol.scope());
   if (!WriteFile(path, GetAsString(symbol))) {
-    context_.Say(symbol.name(), "Error writing %s: %s"_err_en_US,
-        path.c_str(), std::strerror(errno));
+    errors_.Say(symbol.name(), "Error writing %s: %s"_err_en_US, path.c_str(),
+        std::strerror(errno));
   }
 }
 
@@ -159,7 +155,6 @@ void ModFileWriter::PutSymbol(const Symbol &symbol, bool &didContains) {
             }
             PutLower(decls_ << "final::", symbol) << '\n';
           },
-          [](const HostAssocDetails &) {},
           [&](const auto &) { PutEntity(decls_, symbol); }},
       symbol.details());
 }
@@ -277,10 +272,8 @@ std::vector<const Symbol *> CollectSymbols(const Scope &scope) {
   sorted.reserve(scope.size());
   for (const auto &pair : scope) {
     auto *symbol{pair.second};
-    if (!symbol->test(Symbol::Flag::ParentComp)) {
-      if (symbols.insert(symbol).second) {
-        sorted.push_back(symbol);
-      }
+    if (symbols.insert(symbol).second) {
+      sorted.push_back(symbol);
     }
   }
   std::sort(sorted.begin(), sorted.end(), [](const Symbol *x, const Symbol *y) {
@@ -462,7 +455,8 @@ static std::size_t GetFileSize(const std::string &path) {
   }
 }
 
-Scope *ModFileReader::Read(const SourceName &name, Scope *ancestor) {
+Scope *ModFileReader::Read(
+    Scope &globalScope, const SourceName &name, Scope *ancestor) {
   std::string ancestorName;  // empty for module
   if (ancestor) {
     if (auto *scope{ancestor->FindSubmodule(name)}) {
@@ -470,8 +464,8 @@ Scope *ModFileReader::Read(const SourceName &name, Scope *ancestor) {
     }
     ancestorName = ancestor->name().ToString();
   } else {
-    auto it{context_.globalScope().find(name)};
-    if (it != context_.globalScope().end()) {
+    auto it{globalScope.find(name)};
+    if (it != globalScope.end()) {
       return it->second->scope();
     }
   }
@@ -482,8 +476,7 @@ Scope *ModFileReader::Read(const SourceName &name, Scope *ancestor) {
   // TODO: We are reading the file once to verify the checksum and then again
   // to parse. Do it only reading the file once.
   if (!VerifyHeader(*path)) {
-    context_.Say(name,
-        "Module file for '%s' has invalid checksum: %s"_err_en_US,
+    errors_.Say(name, "Module file for '%s' has invalid checksum: %s"_err_en_US,
         name.ToString().data(), path->data());
     return nullptr;
   }
@@ -496,21 +489,19 @@ Scope *ModFileReader::Read(const SourceName &name, Scope *ancestor) {
   auto &parseTree{parsing.parseTree()};
   if (!parsing.messages().empty() || !parsing.consumedWholeFile() ||
       !parseTree.has_value()) {
-    context_.Say(name,
-        "Module file for '%s' is corrupt: %s"_err_en_US, name.ToString().data(),
-        path->data());
+    errors_.Say(name, "Module file for '%s' is corrupt: %s"_err_en_US,
+        name.ToString().data(), path->data());
     return nullptr;
   }
   Scope *parentScope;  // the scope this module/submodule goes into
   if (!ancestor) {
-    parentScope = &context_.globalScope();
+    parentScope = &globalScope;
   } else if (auto *parent{GetSubmoduleParent(*parseTree)}) {
-    parentScope = Read(*parent, ancestor);
+    parentScope = Read(globalScope, *parent, ancestor);
   } else {
     parentScope = ancestor;
   }
-  // TODO: Check that default kinds of intrinsic types match?
-  ResolveNames(context_, *parseTree);
+  ResolveNames(errors_, *parentScope, *parseTree, directories_);
   const auto &it{parentScope->find(name)};
   if (it == parentScope->end()) {
     return nullptr;
@@ -525,7 +516,7 @@ Scope *ModFileReader::Read(const SourceName &name, Scope *ancestor) {
 std::optional<std::string> ModFileReader::FindModFile(
     const SourceName &name, const std::string &ancestor) {
   parser::Messages attachments;
-  for (auto &dir : context_.searchDirectories()) {
+  for (auto &dir : directories_) {
     std::string path{ModFilePath(dir, name, ancestor)};
     std::ifstream ifstream{path};
     if (!ifstream.good()) {
@@ -545,7 +536,7 @@ std::optional<std::string> ModFileReader::FindModFile(
           : "Cannot find module file for submodule '%s' of module '%s'"_err_en_US,
       name.ToString().data(), ancestor.data()}};
   attachments.AttachTo(error);
-  context_.Say(error);
+  errors_.Say(error);
   return std::nullopt;
 }
 
