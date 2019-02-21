@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -153,12 +153,9 @@ public:
     p_ = p;
   }
 
-  bool operator==(const A &x) const {
-    return p_ != nullptr && (p_ == &x || *p_ == x);
-  }
   bool operator==(const OwningPointer &that) const {
     return (p_ == nullptr && that.p_ == nullptr) ||
-        (that.p_ != nullptr && *this == *that.p_);
+        (p_ != nullptr && that.p_ != nullptr && *p_ == *that.p_);
   }
 
 private:

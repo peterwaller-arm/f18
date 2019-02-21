@@ -38,7 +38,6 @@
 
 namespace Fortran::semantics {
 class DerivedTypeSpec;
-class ParamValue;
 class Symbol;
 bool IsDescriptor(const Symbol &);
 }
@@ -55,30 +54,21 @@ using SubscriptInteger = Type<TypeCategory::Integer, 8>;
 using LogicalResult = Type<TypeCategory::Logical, 1>;
 using LargestReal = Type<TypeCategory::Real, 16>;
 
-// DynamicType is meant to be suitable for use as the result type for
-// GetType() functions and member functions; consequently, it must be
-// capable of being used in a constexpr context.  So it does *not*
-// directly hold anything requiring a destructor, such as an arbitrary
-// CHARACTER length type parameter expression.  Those must be derived
-// via LEN() member functions, packaged elsewhere (e.g. as in
-// ArrayConstructor), or copied from a parameter spec in the symbol table
-// if one is supplied.
+// DynamicType is suitable for use as the result type for
+// GetType() functions and member functions; consequently,
+// it must be capable of being used in a constexpr context.
+// So it does *not* hold anything requiring a destructor,
+// such as a CHARACTER length type parameter expression.
+// Those must be derived via LEN() member functions or packaged
+// elsewhere (e.g. as in ArrayConstructor).
 struct DynamicType {
-  constexpr DynamicType() = default;
-  constexpr DynamicType(TypeCategory cat, int k) : category{cat}, kind{k} {}
-  constexpr DynamicType(int k, const semantics::ParamValue &pv)
-    : category{TypeCategory::Character}, kind{k}, charLength{&pv} {}
-  explicit constexpr DynamicType(const semantics::DerivedTypeSpec &dt)
-    : category{TypeCategory::Derived}, derived{&dt} {}
-
   bool operator==(const DynamicType &) const;
   std::string AsFortran() const;
   std::string AsFortran(std::string &&charLenExpr) const;
   DynamicType ResultTypeForMultiply(const DynamicType &) const;
 
-  TypeCategory category{TypeCategory::Integer};  // overridable default
+  TypeCategory category;
   int kind{0};  // set only for intrinsic types
-  const semantics::ParamValue *charLength{nullptr};
   const semantics::DerivedTypeSpec *derived{nullptr};  // TYPE(T), CLASS(T)
 };
 
@@ -274,7 +264,7 @@ public:
   CLASS_BOILERPLATE(SomeKind)
   explicit SomeKind(const semantics::DerivedTypeSpec &dts) : spec_{&dts} {}
 
-  DynamicType GetType() const { return DynamicType{spec()}; }
+  DynamicType GetType() const { return DynamicType{category, 0, spec_}; }
   const semantics::DerivedTypeSpec &spec() const { return *spec_; }
   bool operator==(const SomeKind &) const;
   std::string AsFortran() const;

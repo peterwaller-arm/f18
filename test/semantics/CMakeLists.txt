@@ -71,7 +71,6 @@ set(ERROR_TESTS
   resolve43.f90
   resolve44.f90
   resolve45.f90
-  resolve46.f90
   structconst01.f90
 )
 
@@ -90,7 +89,6 @@ set(SYMBOL_TESTS
   symbol11.f90
   kinds01.f90
   kinds03.f90
-  procinterface01.f90
 )
 
 # These test files have expected .mod file contents in the source

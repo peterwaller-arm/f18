@@ -14,7 +14,6 @@
 
 add_library(FortranEvaluate
   call.cc
-  characteristics.cc
   common.cc
   complex.cc
   constant.cc

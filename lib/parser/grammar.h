@@ -745,9 +745,9 @@ TYPE_PARSER(construct<SequenceStmt>("SEQUENCE"_tok))
 // R732 type-param-def-stmt ->
 //        integer-type-spec , type-param-attr-spec :: type-param-decl-list
 // R734 type-param-attr-spec -> KIND | LEN
-constexpr auto kindOrLen{"KIND" >> pure(common::TypeParamAttr::Kind) ||
-    "LEN" >> pure(common::TypeParamAttr::Len)};
-TYPE_PARSER(construct<TypeParamDefStmt>(integerTypeSpec / ",", kindOrLen,
+TYPE_PARSER(construct<TypeParamDefStmt>(integerTypeSpec / ",",
+    "KIND" >> pure(common::TypeParamAttr::Kind) ||
+        "LEN" >> pure(common::TypeParamAttr::Len),
     "::" >> nonemptyList("expected type parameter declarations"_err_en_US,
                 Parser<TypeParamDecl>{})))
 
@@ -784,11 +784,7 @@ TYPE_PARSER(construct<ComponentAttrSpec>(accessSpec) ||
     construct<ComponentAttrSpec>("CODIMENSION" >> coarraySpec) ||
     construct<ComponentAttrSpec>(contiguous) ||
     construct<ComponentAttrSpec>("DIMENSION" >> Parser<ComponentArraySpec>{}) ||
-    construct<ComponentAttrSpec>(pointer) ||
-    construct<ComponentAttrSpec>(recovery(
-        fail<ErrorRecovery>(
-            "type parameter definitions must appear before component declarations"_err_en_US),
-        kindOrLen >> construct<ErrorRecovery>())))
+    construct<ComponentAttrSpec>(pointer))
 
 // R739 component-decl ->
 //        component-name [( component-array-spec )]
@@ -3226,9 +3222,8 @@ TYPE_PARSER("PROCEDURE" >>
 
 // R1513 proc-interface -> interface-name | declaration-type-spec
 // R1516 interface-name -> name
-// N.B. Simple names of intrinsic types (e.g., "REAL") are ambiguous here.
-TYPE_PARSER(construct<ProcInterface>(name / lookAhead(")"_tok)) ||
-    construct<ProcInterface>(declarationTypeSpec))
+TYPE_PARSER(construct<ProcInterface>(declarationTypeSpec) ||
+    construct<ProcInterface>(name))
 
 // R1514 proc-attr-spec ->
 //         access-spec | proc-language-binding-spec | INTENT ( intent-spec ) |

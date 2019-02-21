@@ -27,7 +27,6 @@
 #include "../common/restorer.h"
 #include "../evaluate/common.h"
 #include "../evaluate/fold.h"
-#include "../evaluate/intrinsics.h"
 #include "../evaluate/tools.h"
 #include "../evaluate/type.h"
 #include "../parser/parse-tree-visitor.h"
@@ -375,9 +374,6 @@ private:
 // Manage a stack of Scopes
 class ScopeHandler : public ImplicitRulesVisitor {
 public:
-  using ImplicitRulesVisitor::Post;
-  using ImplicitRulesVisitor::Pre;
-
   Scope &currScope() { return *currScope_; }
   // The enclosing scope, skipping blocks and derived types.
   Scope &InclusiveScope();
@@ -474,7 +470,7 @@ public:
       return *symbol;
     } else {
       SayAlreadyDeclared(name, *symbol);
-      // replace the old symbol with a new one with correct details
+      // replace the old symbols with a new one with correct details
       EraseSymbol(name);
       return MakeSymbol(name, attrs, details);
     }
@@ -622,8 +618,6 @@ class DeclarationVisitor : public ArraySpecVisitor,
 public:
   using ArraySpecVisitor::Post;
   using ArraySpecVisitor::Pre;
-  using ScopeHandler::Post;
-  using ScopeHandler::Pre;
 
   void Post(const parser::EntityDecl &);
   void Post(const parser::ObjectDecl &);
@@ -660,7 +654,6 @@ public:
   void Post(const parser::IntrinsicTypeSpec::Complex &);
   void Post(const parser::IntrinsicTypeSpec::Logical &);
   void Post(const parser::IntrinsicTypeSpec::Character &);
-  void Post(const parser::IntrinsicTypeSpec::NCharacter &);
   void Post(const parser::CharSelector::LengthAndKind &);
   void Post(const parser::CharLength &);
   void Post(const parser::LengthSelector &);
@@ -684,10 +677,8 @@ public:
   void Post(const parser::ProcedureDeclarationStmt &);
   bool Pre(const parser::ProcComponentDefStmt &);
   void Post(const parser::ProcComponentDefStmt &);
-  bool Pre(const parser::ProcPointerInit &);
-  bool Pre(const parser::ProcInterface &);
-  void Post(const parser::ProcInterface &);
-  void Post(const parser::ProcDecl &);
+  void Post(const parser::ProcInterface &x);
+  void Post(const parser::ProcDecl &x);
   bool Pre(const parser::TypeBoundProcedurePart &);
   void Post(const parser::ContainsStmt &);
   bool Pre(const parser::TypeBoundProcBinding &) { return BeginAttrs(); }
@@ -727,7 +718,6 @@ protected:
   void CheckCommonBlocks();
   void CheckSaveStmts();
   bool CheckNotInBlock(const char *);
-  bool NameIsKnownOrIntrinsic(const parser::Name &);
 
 private:
   // The attribute corresponding to the statement containing an ObjectDecl
@@ -778,7 +768,6 @@ private:
   Attrs HandleSaveName(const SourceName &, Attrs);
   void AddSaveName(std::set<SourceName> &, const SourceName &);
   void SetSaveAttr(Symbol &);
-  bool HandleUnrestrictedSpecificIntrinsicFunction(const parser::Name &);
 
   // Declare an object or procedure entity.
   // T is one of: EntityDetails, ObjectEntityDetails, ProcEntityDetails
@@ -957,16 +946,12 @@ public:
   bool Pre(const parser::ImplicitStmt &);
   void Post(const parser::PointerObject &);
   void Post(const parser::AllocateObject &);
-  bool Pre(const parser::PointerAssignmentStmt &);
   void Post(const parser::PointerAssignmentStmt &);
   void Post(const parser::Designator &);
   template<typename T> void Post(const parser::LoopBounds<T> &);
   void Post(const parser::ProcComponentRef &);
-  void Post(const parser::ProcedureDesignator &);
   bool Pre(const parser::FunctionReference &);
-  void Post(const parser::FunctionReference &);
   bool Pre(const parser::CallStmt &);
-  void Post(const parser::CallStmt &);
   bool Pre(const parser::ImportStmt &);
   void Post(const parser::TypeGuardStmt &);
   bool Pre(const parser::StmtFunctionStmt &);
@@ -989,7 +974,9 @@ private:
 
   void CheckImports();
   void CheckImport(const SourceName &, const SourceName &);
-  bool SetProcFlag(const parser::Name &, Symbol &);
+  void HandleCall(Symbol::Flag, const parser::Call &);
+  void HandleProcedureName(Symbol::Flag, const parser::Name &);
+  bool SetProcFlag(const parser::Name &, Symbol &, Symbol::Flag);
 };
 
 // ImplicitRules implementation
@@ -1696,11 +1683,12 @@ bool ScopeHandler::ConvertToProcEntity(Symbol &symbol) {
     symbol.set_details(ProcEntityDetails{});
   } else if (auto *details{symbol.detailsIf<EntityDetails>()}) {
     symbol.set_details(ProcEntityDetails{std::move(*details)});
+    if (symbol.GetType() && !symbol.test(Symbol::Flag::Implicit)) {
+      CHECK(!symbol.test(Symbol::Flag::Subroutine));
+      symbol.set(Symbol::Flag::Function);
+    }
   } else {
     return false;
-  }
-  if (symbol.GetType()) {
-    symbol.set(Symbol::Flag::Function);
   }
   return true;
 }
@@ -2580,10 +2568,6 @@ bool DeclarationVisitor::HandleAttributeStmt(
 }
 Symbol &DeclarationVisitor::HandleAttributeStmt(
     Attr attr, const parser::Name &name) {
-  if (attr == Attr::INTRINSIC &&
-      !context().intrinsics().IsIntrinsic(name.source.ToString())) {
-    Say(name.source, "'%s' is not a known intrinsic procedure"_err_en_US);
-  }
   auto *symbol{FindInScope(currScope(), name)};
   if (symbol) {
     // symbol was already there: set attribute on it
@@ -2697,15 +2681,6 @@ void DeclarationVisitor::Post(const parser::IntrinsicTypeSpec::Character &x) {
   }
   SetDeclTypeSpec(currScope().MakeCharacterType(
       std::move(*charInfo_.length), std::move(*charInfo_.kind)));
-  charInfo_ = {};
-}
-void DeclarationVisitor::Post(const parser::IntrinsicTypeSpec::NCharacter &x) {
-  if (!charInfo_.length) {
-    charInfo_.length = ParamValue{1};
-  }
-  CHECK(!charInfo_.kind.has_value());
-  SetDeclTypeSpec(currScope().MakeCharacterType(
-      std::move(*charInfo_.length), KindExpr{2 /* EUC_JP */}));
   charInfo_ = {};
 }
 void DeclarationVisitor::Post(const parser::CharSelector::LengthAndKind &x) {
@@ -3044,50 +3019,6 @@ bool DeclarationVisitor::Pre(const parser::ProcComponentDefStmt &) {
 void DeclarationVisitor::Post(const parser::ProcComponentDefStmt &) {
   interfaceName_ = nullptr;
 }
-bool DeclarationVisitor::Pre(const parser::ProcPointerInit &x) {
-  if (auto *name{std::get_if<parser::Name>(&x.u)}) {
-    return !NameIsKnownOrIntrinsic(*name);
-  }
-  return true;
-}
-bool DeclarationVisitor::Pre(const parser::ProcInterface &x) {
-  if (auto *name{std::get_if<parser::Name>(&x.u)}) {
-    if (!NameIsKnownOrIntrinsic(*name)) {
-      // Simple names (lacking parameters and size) of intrinsic types re
-      // ambiguous in Fortran when used as instances of proc-interface.
-      // The parser recognizes them as interface-names since they can be
-      // overridden.  If they turn out (here) to not be names of explicit
-      // interfaces, we need to replace their parses.
-      auto &proc{const_cast<parser::ProcInterface &>(x)};
-      if (name->source == "integer") {
-        proc.u =
-            parser::IntrinsicTypeSpec{parser::IntegerTypeSpec{std::nullopt}};
-      } else if (name->source == "real") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::Real{std::nullopt}};
-      } else if (name->source == "doubleprecision") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::DoublePrecision{}};
-      } else if (name->source == "complex") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::Complex{std::nullopt}};
-      } else if (name->source == "character") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::Character{std::nullopt}};
-      } else if (name->source == "logical") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::Logical{std::nullopt}};
-      } else if (name->source == "doublecomplex") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::DoubleComplex{}};
-      } else if (name->source == "ncharacter") {
-        proc.u = parser::IntrinsicTypeSpec{
-            parser::IntrinsicTypeSpec::NCharacter{std::nullopt}};
-      }
-    }
-  }
-  return true;
-}
 void DeclarationVisitor::Post(const parser::ProcInterface &x) {
   if (auto *name{std::get_if<parser::Name>(&x.u)}) {
     interfaceName_ = name;
@@ -3098,14 +3029,11 @@ void DeclarationVisitor::Post(const parser::ProcDecl &x) {
   const auto &name{std::get<parser::Name>(x.t)};
   ProcInterface interface;
   if (interfaceName_) {
-    if (const Symbol * symbol{FindExplicitInterface(*interfaceName_)}) {
+    if (auto *symbol{FindExplicitInterface(*interfaceName_)}) {
       interface.set_symbol(*symbol);
     }
-  }
-  if (interface.symbol() == nullptr) {
-    if (auto *type{GetDeclTypeSpec()}) {
-      interface.set_type(*type);
-    }
+  } else if (auto *type{GetDeclTypeSpec()}) {
+    interface.set_type(*type);
   }
   auto attrs{HandleSaveName(name.source, GetAttrs())};
   if (currScope().kind() != Scope::Kind::DerivedType) {
@@ -3524,11 +3452,6 @@ Symbol &DeclarationVisitor::MakeCommonBlockSymbol(const parser::Name &name) {
   return Resolve(name, currScope().MakeCommonBlock(name.source));
 }
 
-bool DeclarationVisitor::NameIsKnownOrIntrinsic(const parser::Name &name) {
-  return FindSymbol(name) != nullptr ||
-      HandleUnrestrictedSpecificIntrinsicFunction(name);
-}
-
 // Check if this derived type can be in a COMMON block.
 void DeclarationVisitor::CheckCommonBlockDerivedType(
     const SourceName &name, const Symbol &typeSymbol) {
@@ -3557,28 +3480,6 @@ void DeclarationVisitor::CheckCommonBlockDerivedType(
         }
       }
     }
-  }
-}
-
-bool DeclarationVisitor::HandleUnrestrictedSpecificIntrinsicFunction(
-    const parser::Name &name) {
-  if (context()
-          .intrinsics()
-          .IsUnrestrictedSpecificIntrinsicFunction(name.source.ToString())
-          .has_value()) {
-    // Unrestricted specific intrinsic function names (e.g., "cos")
-    // are acceptable as procedure interfaces.
-    Scope *scope{&currScope()};
-    while (scope->kind() == Scope::Kind::DerivedType) {
-      scope = &scope->parent();
-    }
-    Symbol &symbol{MakeSymbol(*scope, name.source, Attrs{Attr::INTRINSIC})};
-    symbol.set_details(MiscDetails{MiscDetails::Kind::SpecificIntrinsic});
-    CHECK(symbol.HasExplicitInterface());
-    Resolve(name, symbol);
-    return true;
-  } else {
-    return false;
   }
 }
 
@@ -4130,19 +4031,13 @@ bool ResolveNamesVisitor::Pre(const parser::PrefixSpec &x) {
   return true;  // TODO
 }
 
-bool ResolveNamesVisitor::Pre(const parser::FunctionReference &) {
-  expectedProcFlag_ = Symbol::Flag::Function;
-  return true;
+bool ResolveNamesVisitor::Pre(const parser::FunctionReference &x) {
+  HandleCall(Symbol::Flag::Function, x.v);
+  return false;
 }
-void ResolveNamesVisitor::Post(const parser::FunctionReference &) {
-  expectedProcFlag_ = std::nullopt;
-}
-bool ResolveNamesVisitor::Pre(const parser::CallStmt &) {
-  expectedProcFlag_ = Symbol::Flag::Subroutine;
-  return true;
-}
-void ResolveNamesVisitor::Post(const parser::CallStmt &) {
-  expectedProcFlag_ = std::nullopt;
+bool ResolveNamesVisitor::Pre(const parser::CallStmt &x) {
+  HandleCall(Symbol::Flag::Subroutine, x.v);
+  return false;
 }
 
 bool ResolveNamesVisitor::Pre(const parser::ImportStmt &x) {
@@ -4307,77 +4202,83 @@ const parser::Name *ResolveNamesVisitor::FindComponent(
   return nullptr;
 }
 
-void ResolveNamesVisitor::Post(const parser::ProcedureDesignator &x) {
-  if (const auto *name{std::get_if<parser::Name>(&x.u)}) {
-    auto *symbol{FindSymbol(*name)};
-    if (symbol == nullptr) {
-      symbol = &MakeSymbol(context().globalScope(), name->source, Attrs{});
-      Resolve(*name, *symbol);
-      if (symbol->has<ModuleDetails>()) {
-        SayWithDecl(*name, *symbol,
-            "Use of '%s' as a procedure conflicts with its declaration"_err_en_US);
-        return;
-      }
-      if (isImplicitNoneExternal() && !symbol->attrs().test(Attr::EXTERNAL)) {
-        Say(*name,
-            "'%s' is an external procedure without the EXTERNAL"
-            " attribute in a scope with IMPLICIT NONE(EXTERNAL)"_err_en_US);
-        return;
-      }
-      symbol->attrs().set(Attr::EXTERNAL);
-      if (!symbol->has<ProcEntityDetails>()) {
-        // symbol->set_details(ProcEntityDetails{});
-        ConvertToProcEntity(*symbol);
-      }
-      if (const auto type{GetImplicitType(*symbol)}) {
-        symbol->get<ProcEntityDetails>().interface().set_type(*type);
-      }
-      SetProcFlag(*name, *symbol);
-    } else if (symbol->has<UnknownDetails>()) {
-      CHECK(!"unexpected UnknownDetails");
-    } else if (CheckUseError(*name)) {
-      // error was reported
-    } else {
-      symbol = Resolve(*name, &symbol->GetUltimate());
+void ResolveNamesVisitor::HandleCall(
+    Symbol::Flag procFlag, const parser::Call &call) {
+  std::visit(
+      common::visitors{
+          [&](const parser::Name &x) { HandleProcedureName(procFlag, x); },
+          [&](const parser::ProcComponentRef &x) { Walk(x); },
+      },
+      std::get<parser::ProcedureDesignator>(call.t).u);
+  Walk(std::get<std::list<parser::ActualArgSpec>>(call.t));
+}
+
+void ResolveNamesVisitor::HandleProcedureName(
+    Symbol::Flag flag, const parser::Name &name) {
+  CHECK(flag == Symbol::Flag::Function || flag == Symbol::Flag::Subroutine);
+  auto *symbol{FindSymbol(name)};
+  if (symbol == nullptr) {
+    symbol = &MakeSymbol(context().globalScope(), name.source, Attrs{});
+    Resolve(name, *symbol);
+    if (symbol->has<ModuleDetails>()) {
+      SayWithDecl(name, *symbol,
+          "Use of '%s' as a procedure conflicts with its declaration"_err_en_US);
+      return;
+    }
+    if (isImplicitNoneExternal() && !symbol->attrs().test(Attr::EXTERNAL)) {
+      Say(name,
+          "'%s' is an external procedure without the EXTERNAL"
+          " attribute in a scope with IMPLICIT NONE(EXTERNAL)"_err_en_US);
+      return;
+    }
+    symbol->attrs().set(Attr::EXTERNAL);
+    if (!symbol->has<ProcEntityDetails>()) {
       ConvertToProcEntity(*symbol);
-      if (!SetProcFlag(*name, *symbol)) {
-        return;  // reported error
-      }
-      if (symbol->has<ProcEntityDetails>() ||
-          symbol->has<SubprogramDetails>() ||
-          symbol->has<DerivedTypeDetails>() ||
-          symbol->has<ObjectEntityDetails>() ||
-          symbol->has<SubprogramNameDetails>() ||
-          symbol->has<GenericDetails>()) {
-        // these are all valid as procedure-designators
-      } else if (symbol->test(Symbol::Flag::Implicit)) {
-        Say(*name,
-            "Use of '%s' as a procedure conflicts with its implicit definition"_err_en_US);
-      } else {
-        SayWithDecl(*name, *symbol,
-            "Use of '%s' as a procedure conflicts with its declaration"_err_en_US);
-      }
+    }
+    if (const auto type{GetImplicitType(*symbol)}) {
+      symbol->get<ProcEntityDetails>().interface().set_type(*type);
+    }
+    SetProcFlag(name, *symbol, flag);
+  } else if (symbol->has<UnknownDetails>()) {
+    CHECK(!"unexpected UnknownDetails");
+  } else if (CheckUseError(name)) {
+    // error was reported
+  } else {
+    symbol = Resolve(name, &symbol->GetUltimate());
+    ConvertToProcEntity(*symbol);
+    if (!SetProcFlag(name, *symbol, flag)) {
+      return;  // reported error
+    }
+    if (symbol->has<SubprogramNameDetails>() || symbol->has<GenericDetails>() ||
+        symbol->has<DerivedTypeDetails>() || symbol->has<SubprogramDetails>() ||
+        symbol->has<ProcEntityDetails>() ||
+        symbol->has<ObjectEntityDetails>()) {
+      // these are all valid as procedure-designators
+    } else if (symbol->test(Symbol::Flag::Implicit)) {
+      Say(name,
+          "Use of '%s' as a procedure conflicts with its implicit definition"_err_en_US);
+    } else {
+      SayWithDecl(name, *symbol,
+          "Use of '%s' as a procedure conflicts with its declaration"_err_en_US);
     }
   }
 }
 
 // Check and set the Function or Subroutine flag on symbol; false on error.
 bool ResolveNamesVisitor::SetProcFlag(
-    const parser::Name &name, Symbol &symbol) {
-  CHECK(expectedProcFlag_);
-  if (symbol.test(Symbol::Flag::Function) &&
-      expectedProcFlag_ == Symbol::Flag::Subroutine) {
+    const parser::Name &name, Symbol &symbol, Symbol::Flag flag) {
+  if (symbol.test(Symbol::Flag::Function) && flag == Symbol::Flag::Subroutine) {
     SayWithDecl(
         name, symbol, "Cannot call function '%s' like a subroutine"_err_en_US);
     return false;
   } else if (symbol.test(Symbol::Flag::Subroutine) &&
-      expectedProcFlag_ == Symbol::Flag::Function) {
+      flag == Symbol::Flag::Function) {
     SayWithDecl(
         name, symbol, "Cannot call subroutine '%s' like a function"_err_en_US);
     return false;
   } else if (symbol.has<ProcEntityDetails>()) {
-    symbol.set(*expectedProcFlag_);  // in case it hasn't been set yet
-    if (expectedProcFlag_ == Symbol::Flag::Function) {
+    symbol.set(flag);  // in case it hasn't been set yet
+    if (flag == Symbol::Flag::Function) {
       ApplyImplicitRules(symbol);
     }
   }
@@ -4545,26 +4446,6 @@ void ResolveNamesVisitor::Post(const parser::AllocateObject &x) {
           },
       },
       x.u);
-}
-bool ResolveNamesVisitor::Pre(const parser::PointerAssignmentStmt &x) {
-  // Resolve unrestricted specific intrinsic procedures as in "p => cos".
-  const auto &expr{std::get<parser::Expr>(x.t)};
-  if (const auto *designator{
-          std::get_if<common::Indirection<parser::Designator>>(&expr.u)}) {
-    if (const parser::Name *
-        name{std::visit(
-            common::visitors{
-                [](const parser::ObjectName &n) { return &n; },
-                [](const parser::DataRef &dataRef) {
-                  return std::get_if<parser::Name>(&dataRef.u);
-                },
-                [](const auto &) -> const parser::Name * { return nullptr; },
-            },
-            (*designator)->u)}) {
-      return !NameIsKnownOrIntrinsic(*name);
-    }
-  }
-  return true;
 }
 void ResolveNamesVisitor::Post(const parser::PointerAssignmentStmt &x) {
   ResolveDataRef(std::get<parser::DataRef>(x.t));

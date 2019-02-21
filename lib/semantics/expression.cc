@@ -115,21 +115,8 @@ struct CallAndArguments {
 };
 
 struct DynamicTypeWithLength : public DynamicType {
-  std::optional<Expr<SubscriptInteger>> LEN() const;
   std::optional<Expr<SubscriptInteger>> length;
 };
-
-std::optional<Expr<SubscriptInteger>> DynamicTypeWithLength::LEN() const {
-  if (length.has_value()) {
-    return length;
-  }
-  if (charLength != nullptr) {
-    if (const auto &len{charLength->GetExplicit()}) {
-      return ConvertToType<SubscriptInteger>(common::Clone(*len));
-    }
-  }
-  return std::nullopt;
-}
 
 std::optional<DynamicTypeWithLength> AnalyzeTypeSpec(
     ExpressionAnalysisContext &context,
@@ -142,22 +129,24 @@ std::optional<DynamicTypeWithLength> AnalyzeTypeSpec(
       if (const semantics::IntrinsicTypeSpec *
           intrinsic{typeSpec->AsIntrinsic()}) {
         TypeCategory category{intrinsic->category()};
-        if (auto optKind{ToInt64(intrinsic->kind())}) {
-          int kind{static_cast<int>(*optKind)};
+        if (auto kind{ToInt64(intrinsic->kind())}) {
+          DynamicTypeWithLength result{{category, static_cast<int>(*kind)}};
           if (category == TypeCategory::Character) {
             const semantics::CharacterTypeSpec &cts{
                 typeSpec->characterTypeSpec()};
-            const semantics::ParamValue &len{cts.length()};
+            const semantics::ParamValue len{cts.length()};
             // N.B. CHARACTER(LEN=*) is allowed in type-specs in ALLOCATE() &
             // type guards, but not in array constructors.
-            return DynamicTypeWithLength{DynamicType{kind, len}};
-          } else {
-            return DynamicTypeWithLength{DynamicType{category, kind}};
+            if (len.GetExplicit().has_value()) {
+              Expr<SomeInteger> copy{*len.GetExplicit()};
+              result.length = ConvertToType<SubscriptInteger>(std::move(copy));
+            }
           }
+          return result;
         }
       } else if (const semantics::DerivedTypeSpec *
           derived{typeSpec->AsDerived()}) {
-        return DynamicTypeWithLength{DynamicType{*derived}};
+        return DynamicTypeWithLength{{TypeCategory::Derived, 0, derived}};
       }
     }
   }
@@ -619,8 +608,9 @@ static MaybeExpr AnalyzeExpr(
   }
   auto kind{AnalyzeKindParam(context, x.kind, defaultKind)};
   if (letterKind.has_value() && kind != *letterKind) {
-    context.Say("explicit kind parameter on real constant disagrees with "
-                "exponent letter"_en_US);
+    context.Say(
+        "explicit kind parameter on real constant disagrees with "
+        "exponent letter"_en_US);
   }
   auto result{common::SearchTypes(
       RealTypeVisitor{kind, x.real.source, context.GetFoldingContext()})};
@@ -1189,7 +1179,7 @@ void ArrayConstructorContext::Push(MaybeExpr &&x) {
       if (static_cast<const DynamicType &>(*type_) ==
           static_cast<const DynamicType &>(xType)) {
         values_.Push(std::move(*x));
-        if (auto thisLen{ToInt64(xType.LEN())}) {
+        if (auto thisLen{ToInt64(xType.length)}) {
           if (constantLength_.has_value()) {
             if (exprContext_.context().warnOnNonstandardUsage() &&
                 *thisLen != *constantLength_) {
@@ -1202,11 +1192,11 @@ void ArrayConstructorContext::Push(MaybeExpr &&x) {
               // length of the array constructor's character elements, not the
               // first, when there is no explicit type.
               *constantLength_ = *thisLen;
-              type_->length = xType.LEN();
+              type_->length = std::move(xType.length);
             }
           } else {
             constantLength_ = *thisLen;
-            type_->length = xType.LEN();
+            type_->length = std::move(xType.length);
           }
         }
       } else {
@@ -1344,8 +1334,9 @@ struct ArrayConstructorTypeVisitor {
             *type.derived, MakeSpecific<T>(std::move(values))});
       } else if (type.kind == T::kind) {
         if constexpr (T::category == TypeCategory::Character) {
+          CHECK(type.length.has_value());
           return AsMaybeExpr(ArrayConstructor<T>{
-              type.LEN().value(), MakeSpecific<T>(std::move(values))});
+              std::move(*type.length), MakeSpecific<T>(std::move(values))});
         } else {
           return AsMaybeExpr(
               ArrayConstructor<T>{MakeSpecific<T>(std::move(values))});
@@ -1551,6 +1542,7 @@ static std::optional<CallAndArguments> Procedure(
             if (MaybeExpr component{AnalyzeExpr(context, pcr.v)}) {
               // TODO distinguish PCR from TBP
               // TODO optional PASS argument for TBP
+              context.Say("TODO: proc component ref"_err_en_US);
               return std::nullopt;
             } else {
               return std::nullopt;
@@ -1565,9 +1557,6 @@ static MaybeExpr AnalyzeExpr(ExpressionAnalysisContext &context,
   // TODO: C1002: Allow a whole assumed-size array to appear if the dummy
   // argument would accept it.  Handle by special-casing the context
   // ActualArg -> Variable -> Designator.
-  // TODO: Actual arguments that are procedures and procedure pointers need to
-  // be detected and represented (they're not expressions).
-  // TODO: C1534: Don't allow a "restricted" specific intrinsic to be passed.
   ActualArguments arguments;
   for (const auto &arg :
       std::get<std::list<parser::ActualArgSpec>>(funcRef.v.t)) {

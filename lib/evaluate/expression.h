@@ -473,7 +473,9 @@ public:
   const semantics::DerivedTypeSpec &derivedTypeSpec() const {
     return *derivedTypeSpec_;
   }
-  DynamicType GetType() const { return DynamicType{derivedTypeSpec()}; }
+  DynamicType GetType() const {
+    return DynamicType{TypeCategory::Derived, 0, derivedTypeSpec_};
+  }
   std::ostream &AsFortran(std::ostream &) const;
 
 private:
