@@ -295,8 +295,8 @@ class FinalProcDetails {};
 class MiscDetails {
 public:
   ENUM_CLASS(Kind, None, ConstructName, ScopeName, PassName, ComplexPartRe,
-      ComplexPartIm, KindParamInquiry, LenParamInquiry,
-      SelectTypeAssociateName);
+      ComplexPartIm, KindParamInquiry, LenParamInquiry, SelectTypeAssociateName,
+      SpecificIntrinsic);
   MiscDetails(Kind kind) : kind_{kind} {}
   Kind kind() const { return kind_; }
 
@@ -371,7 +371,6 @@ public:
   void add_specificProc(const Symbol &proc) { specificProcs_.push_back(&proc); }
 
   Symbol *specific() { return specific_; }
-  const Symbol *specific() const { return specific_; }
   void set_specific(Symbol &specific);
 
   // Derived type with same name as generic, if any.
@@ -498,6 +497,9 @@ public:
             [](const ProcEntityDetails &x) { return x.HasExplicitInterface(); },
             [](const UseDetails &x) {
               return x.symbol().HasExplicitInterface();
+            },
+            [](const MiscDetails &x) {
+              return x.kind() == MiscDetails::Kind::SpecificIntrinsic;
             },
             [](const auto &) { return false; },
         },
