@@ -280,19 +280,10 @@ protected:
     } derived;
   };
 
-  // Walk the parse tree of a type spec and return the DeclTypeSpec for it.
-  template<typename T> const DeclTypeSpec *ProcessTypeSpec(const T &x) {
-    auto save{common::ScopedSet(state_, State{})};
-    BeginDeclTypeSpec();
-    Walk(x);
-    const auto *type{GetDeclTypeSpec()};
-    EndDeclTypeSpec();
-    return type;
-  }
-
   const DeclTypeSpec *GetDeclTypeSpec();
   void BeginDeclTypeSpec();
   void EndDeclTypeSpec();
+  State SetDeclTypeSpecState(State);
   void SetDeclTypeSpec(const DeclTypeSpec &);
   void SetDeclTypeSpecCategory(DeclTypeSpec::Category);
   DeclTypeSpec::Category GetDeclTypeSpecCategory() const {
@@ -414,7 +405,6 @@ public:
 
   // Special messages: already declared; referencing symbol's declaration;
   // about a type; two names & locations
-  void SayAlreadyDeclared(const SourceName &, const Symbol &);
   void SayAlreadyDeclared(const parser::Name &, const Symbol &);
   void SayWithDecl(const parser::Name &, const Symbol &, MessageFixedText &&);
   void SayDerivedType(const SourceName &, MessageFixedText &&, const Scope &);
@@ -562,6 +552,7 @@ private:
 class InterfaceVisitor : public virtual ScopeHandler {
 public:
   bool Pre(const parser::InterfaceStmt &);
+  void Post(const parser::InterfaceStmt &);
   void Post(const parser::EndInterfaceStmt &);
   bool Pre(const parser::GenericSpec &);
   bool Pre(const parser::ProcedureStmt &);
@@ -608,22 +599,14 @@ public:
   bool Pre(const parser::SeparateModuleSubprogram &);
   void Post(const parser::SeparateModuleSubprogram &);
   bool Pre(const parser::Suffix &);
-  bool Pre(const parser::PrefixSpec &);
-  void Post(const parser::ImplicitPart &);
 
 protected:
   // Set when we see a stmt function that is really an array element assignment
   bool badStmtFuncFound_{false};
 
 private:
-  // Info about the current function: parse tree of the type in the PrefixSpec;
-  // name and symbol of the function result from the Suffix; source location.
-  struct {
-    const parser::DeclarationTypeSpec *parsedType{nullptr};
-    const parser::Name *resultName{nullptr};
-    Symbol *resultSymbol{nullptr};
-    const SourceName *source{nullptr};
-  } funcInfo_;
+  // Function result name from parser::Suffix, if any.
+  const parser::Name *funcResultName_{nullptr};
 
   bool BeginSubprogram(const parser::Name &, Symbol::Flag, bool hasModulePrefix,
       const std::optional<parser::InternalSubprogramPart> &);
@@ -966,6 +949,7 @@ public:
   template<typename T> bool Pre(const T &) { return true; }
   template<typename T> void Post(const T &) {}
 
+  bool Pre(const parser::PrefixSpec &);
   void Post(const parser::SpecificationPart &);
   bool Pre(const parser::MainProgram &);
   void Post(const parser::EndProgramStmt &);
@@ -1201,6 +1185,12 @@ void DeclTypeSpecVisitor::BeginDeclTypeSpec() {
 void DeclTypeSpecVisitor::EndDeclTypeSpec() {
   CHECK(state_.expectDeclTypeSpec);
   state_ = {};
+}
+
+DeclTypeSpecVisitor::State DeclTypeSpecVisitor::SetDeclTypeSpecState(State x) {
+  auto result{state_};
+  state_ = x;
+  return result;
 }
 
 void DeclTypeSpecVisitor::SetDeclTypeSpecCategory(
@@ -1483,28 +1473,12 @@ Bound ArraySpecVisitor::GetBound(const parser::SpecificationExpr &x) {
 
 void ScopeHandler::SayAlreadyDeclared(
     const parser::Name &name, const Symbol &prev) {
-  SayAlreadyDeclared(name.source, prev);
+  Say2(name, "'%s' is already declared in this scoping unit"_err_en_US, prev,
+      "Previous declaration of '%s'"_en_US);
 }
-void ScopeHandler::SayAlreadyDeclared(
-    const SourceName &name, const Symbol &prev) {
-  auto &msg{
-      Say(name, "'%s' is already declared in this scoping unit"_err_en_US)};
-  if (const auto *details{prev.detailsIf<UseDetails>()}) {
-    msg.Attach(details->location(),
-        "It is use-associated with '%s' in module '%s'"_err_en_US,
-        details->symbol().name().ToString().c_str(),
-        details->module().name().ToString().c_str());
-  } else {
-    msg.Attach(prev.name(), "Previous declaration of '%s'"_en_US,
-        prev.name().ToString().c_str());
-  }
-}
-
 void ScopeHandler::SayWithDecl(
     const parser::Name &name, const Symbol &symbol, MessageFixedText &&msg) {
-  Say2(name, std::move(msg), symbol,
-      symbol.test(Symbol::Flag::Implicit) ? "Implicit declaration of '%s'"_en_US
-                                          : "Declaration of '%s'"_en_US);
+  Say2(name, std::move(msg), symbol, "Declaration of '%s'"_en_US);
 }
 void ScopeHandler::SayDerivedType(
     const SourceName &name, MessageFixedText &&msg, const Scope &type) {
@@ -1959,9 +1933,15 @@ bool InterfaceVisitor::Pre(const parser::InterfaceStmt &x) {
   isAbstract_ = std::holds_alternative<parser::Abstract>(x.u);
   return true;
 }
+void InterfaceVisitor::Post(const parser::InterfaceStmt &) {}
 
 void InterfaceVisitor::Post(const parser::EndInterfaceStmt &) {
-  genericName_ = nullptr;
+  if (genericName_) {
+    if (const auto *proc{GetGenericDetails().CheckSpecific()}) {
+      SayAlreadyDeclared(*genericName_, *proc);
+    }
+    genericName_ = nullptr;
+  }
   inInterfaceBlock_ = false;
   isAbstract_ = false;
 }
@@ -2104,9 +2084,6 @@ void InterfaceVisitor::ResolveSpecificsInGeneric(Symbol &generic) {
 void InterfaceVisitor::CheckGenericProcedures(Symbol &generic) {
   ResolveSpecificsInGeneric(generic);
   auto &details{generic.get<GenericDetails>()};
-  if (const auto *proc{details.CheckSpecific()}) {
-    SayAlreadyDeclared(generic.name(), *proc);
-  }
   auto &specifics{details.specificProcs()};
   if (specifics.empty()) {
     if (details.derivedType()) {
@@ -2189,31 +2166,9 @@ bool SubprogramVisitor::HandleStmtFunction(const parser::StmtFunctionStmt &x) {
 
 bool SubprogramVisitor::Pre(const parser::Suffix &suffix) {
   if (suffix.resultName) {
-    funcInfo_.resultName = &suffix.resultName.value();
+    funcResultName_ = &suffix.resultName.value();
   }
   return true;
-}
-
-bool SubprogramVisitor::Pre(const parser::PrefixSpec &x) {
-  // Save this to process after UseStmt and ImplicitPart
-  if (const auto *parsedType{std::get_if<parser::DeclarationTypeSpec>(&x.u)}) {
-    funcInfo_.parsedType = parsedType;
-    funcInfo_.source = currStmtSource();
-    return false;
-  } else {
-    return true;
-  }
-}
-
-void SubprogramVisitor::Post(const parser::ImplicitPart &) {
-  // If the function has a type in the prefix, process it now
-  if (funcInfo_.parsedType) {
-    messageHandler().set_currStmtSource(funcInfo_.source);
-    if (const auto *type{ProcessTypeSpec(*funcInfo_.parsedType)}) {
-      funcInfo_.resultSymbol->SetType(*type);
-    }
-  }
-  funcInfo_ = {};
 }
 
 bool HasModulePrefix(const std::list<parser::PrefixSpec> &prefixes) {
@@ -2277,6 +2232,10 @@ bool SubprogramVisitor::Pre(const parser::SubroutineStmt &stmt) {
   return BeginAttrs();
 }
 bool SubprogramVisitor::Pre(const parser::FunctionStmt &stmt) {
+  if (!subpNamesOnly_) {
+    BeginDeclTypeSpec();
+    CHECK(!funcResultName_);
+  }
   return BeginAttrs();
 }
 
@@ -2298,18 +2257,23 @@ void SubprogramVisitor::Post(const parser::FunctionStmt &stmt) {
     Symbol &dummy{MakeSymbol(dummyName, EntityDetails(true))};
     details.add_dummyArg(dummy);
   }
+  // add function result to function scope
+  EntityDetails funcResultDetails;
+  funcResultDetails.set_funcResult(true);
+  if (auto *type{GetDeclTypeSpec()}) {
+    funcResultDetails.set_type(*type);
+  }
+  EndDeclTypeSpec();
+
   const parser::Name *funcResultName;
-  if (funcInfo_.resultName && funcInfo_.resultName->source != name.source) {
-    funcResultName = funcInfo_.resultName;
+  if (funcResultName_ && funcResultName_->source != name.source) {
+    funcResultName = funcResultName_;
   } else {
     EraseSymbol(name);  // was added by PushSubprogramScope
     funcResultName = &name;
   }
-  // add function result to function scope
-  EntityDetails funcResultDetails;
-  funcResultDetails.set_funcResult(true);
-  funcInfo_.resultSymbol = &MakeSymbol(*funcResultName, funcResultDetails);
-  details.set_result(*funcInfo_.resultSymbol);
+  details.set_result(MakeSymbol(*funcResultName, funcResultDetails));
+  funcResultName_ = nullptr;
 }
 
 SubprogramDetails &SubprogramVisitor::PostSubprogramStmt(
@@ -2376,20 +2340,6 @@ Symbol &SubprogramVisitor::PushSubprogramScope(
     const parser::Name &name, Symbol::Flag subpFlag) {
   auto *symbol{GetSpecificFromGeneric(name)};
   if (!symbol) {
-    if (auto *prev{FindSymbol(name)}) {
-      if (prev->attrs().test(Attr::EXTERNAL) &&
-          prev->has<ProcEntityDetails>()) {
-        // this subprogram was previously called, now being declared
-        if (!prev->test(subpFlag)) {
-          Say2(name,
-              subpFlag == Symbol::Flag::Function
-                  ? "'%s' was previously called as a subroutine"_err_en_US
-                  : "'%s' was previously called as a function"_err_en_US,
-              *prev, "Previous call of '%s'"_en_US);
-        }
-        EraseSymbol(name);
-      }
-    }
     symbol = &MakeSymbol(name, SubprogramDetails{});
     symbol->set(subpFlag);
   }
@@ -3289,8 +3239,14 @@ void DeclarationVisitor::Post(const parser::AllocateStmt &) {
 }
 
 bool DeclarationVisitor::Pre(const parser::StructureConstructor &x) {
+  auto savedState{SetDeclTypeSpecState({})};
+  BeginDeclTypeSpec();
   auto &parsedType{std::get<parser::DerivedTypeSpec>(x.t)};
-  const DeclTypeSpec *type{ProcessTypeSpec(parsedType)};
+  Walk(parsedType);
+  const DeclTypeSpec *type{GetDeclTypeSpec()};
+  EndDeclTypeSpec();
+  SetDeclTypeSpecState(savedState);
+
   if (type == nullptr) {
     return false;
   }
@@ -3659,29 +3615,31 @@ Symbol *DeclarationVisitor::DeclareLocalEntity(const parser::Name &name) {
 
 Symbol *DeclarationVisitor::DeclareStatementEntity(const parser::Name &name,
     const std::optional<parser::IntegerTypeSpec> &type) {
-  const DeclTypeSpec *declTypeSpec{nullptr};
   if (auto *prev{FindSymbol(name)}) {
     if (prev->owner() == currScope()) {
       SayAlreadyDeclared(name, *prev);
       return nullptr;
     }
     name.symbol = nullptr;
-    declTypeSpec = prev->GetType();
   }
   Symbol &symbol{DeclareEntity<ObjectEntityDetails>(name, {})};
-  if (!symbol.has<ObjectEntityDetails>()) {
-    return nullptr;  // error was reported in DeclareEntity
+  if (symbol.has<ObjectEntityDetails>()) {
+    const DeclTypeSpec *declTypeSpec{nullptr};
+    if (type.has_value()) {
+      BeginDeclTypeSpec();
+      DeclarationVisitor::Post(*type);
+      declTypeSpec = GetDeclTypeSpec();
+      EndDeclTypeSpec();
+    }
+    if (declTypeSpec != nullptr) {
+      SetType(name, *declTypeSpec);
+    } else {
+      ApplyImplicitRules(symbol);
+    }
+    CheckScalarIntegerType(name);
+    return Resolve(name, &symbol);
   }
-  if (type.has_value()) {
-    declTypeSpec = ProcessTypeSpec(*type);
-  }
-  if (declTypeSpec != nullptr) {
-    SetType(name, *declTypeSpec);
-  } else {
-    ApplyImplicitRules(symbol);
-  }
-  CheckScalarIntegerType(name);
-  return Resolve(name, &symbol);
+  return nullptr;
 }
 
 // Set the type of an entity or report an error.
@@ -3873,7 +3831,12 @@ bool ConstructVisitor::Pre(const parser::LocalitySpec::Shared &x) {
 }
 
 bool ConstructVisitor::Pre(const parser::AcSpec &x) {
-  ProcessTypeSpec(x.type);
+  // AcSpec can occur within a TypeDeclarationStmt: save and restore state
+  auto savedState{SetDeclTypeSpecState({})};
+  BeginDeclTypeSpec();
+  Walk(x.type);
+  EndDeclTypeSpec();
+  SetDeclTypeSpecState(savedState);
   PushScope(Scope::Kind::ImpliedDos, nullptr);
   Walk(x.values);
   PopScope();
@@ -4162,6 +4125,10 @@ const DeclTypeSpec &ConstructVisitor::ToDeclTypeSpec(
 }
 
 // ResolveNamesVisitor implementation
+
+bool ResolveNamesVisitor::Pre(const parser::PrefixSpec &x) {
+  return true;  // TODO
+}
 
 bool ResolveNamesVisitor::Pre(const parser::FunctionReference &x) {
   HandleCall(Symbol::Flag::Function, x.v);

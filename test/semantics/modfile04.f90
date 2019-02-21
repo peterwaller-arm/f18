@@ -1,4 +1,4 @@
-! Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+! Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 !
 ! Licensed under the Apache License, Version 2.0 (the "License");
 ! you may not use this file except in compliance with the License.
@@ -14,9 +14,7 @@
 
 ! modfile with subprograms
 
-module m1
-  type :: t
-  end type
+module m
 contains
 
   pure subroutine s(x, y) bind(c)
@@ -36,20 +34,8 @@ contains
 
 end
 
-module m2
-contains
-  type(t) function f3()
-    use m1
-  end
-  function f4() result(x)
-    implicit complex(x)
-  end
-end
-
-!Expect: m1.mod
-!module m1
-!type::t
-!end type
+!Expect: m.mod
+!module m
 !contains
 !pure subroutine s(x,y) bind(c)
 !logical(4),intent(in)::x
@@ -61,16 +47,5 @@ end
 !function f2(y)
 !real(4)::f2
 !complex(4)::y
-!end
-!end
-
-!Expect: m2.mod
-!module m2
-!contains
-!function f3()
-!type(t)::f3
-!end
-!function f4() result(x)
-!complex(4)::x
 !end
 !end
