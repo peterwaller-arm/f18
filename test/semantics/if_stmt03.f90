@@ -18,9 +18,9 @@
 
 LOGICAL, DIMENSION (2) :: B
 
-!ERROR: Must have LOGICAL type, but is REAL(4)
+!ERROR: Expected a LOGICAL expression
 IF (A) A = LOG (A)
-!ERROR: Must be a scalar value, but is a rank-1 array
+!ERROR: Expected a scalar LOGICAL expression
 IF (B) A = LOG (A)
 
 END

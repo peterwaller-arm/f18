@@ -21,7 +21,6 @@
 #include "scope.h"
 #include "semantics.h"
 #include "symbol.h"
-#include "tools.h"
 #include "type.h"
 #include "../common/Fortran.h"
 #include "../common/default-kinds.h"
@@ -34,7 +33,6 @@
 #include "../evaluate/type.h"
 #include "../parser/parse-tree-visitor.h"
 #include "../parser/parse-tree.h"
-#include "../parser/tools.h"
 #include <list>
 #include <map>
 #include <memory>
@@ -762,15 +760,6 @@ protected:
   bool CheckNotInBlock(const char *);
   bool NameIsKnownOrIntrinsic(const parser::Name &);
 
-  // Each of these returns a pointer to a resolved Name (i.e. with symbol)
-  // or nullptr in case of error.
-  const parser::Name *ResolveStructureComponent(
-      const parser::StructureComponent &);
-  const parser::Name *ResolveDesignator(const parser::Designator &);
-  const parser::Name *ResolveDataRef(const parser::DataRef &);
-  const parser::Name *ResolveVariable(const parser::Variable &);
-  const parser::Name *ResolveName(const parser::Name &);
-
 private:
   // The attribute corresponding to the statement containing an ObjectDecl
   std::optional<Attr> objectDeclAttr_;
@@ -822,7 +811,6 @@ private:
   void AddSaveName(std::set<SourceName> &, const SourceName &);
   void SetSaveAttr(Symbol &);
   bool HandleUnrestrictedSpecificIntrinsicFunction(const parser::Name &);
-  const parser::Name *FindComponent(const parser::Name *, const parser::Name &);
 
   // Declare an object or procedure entity.
   // T is one of: EntityDetails, ObjectEntityDetails, ProcEntityDetails
@@ -900,13 +888,11 @@ public:
   bool Pre(const parser::SelectTypeConstruct::TypeCase &);
   void Post(const parser::SelectTypeConstruct::TypeCase &);
   void Post(const parser::TypeGuardStmt::Guard &);
-  bool Pre(const parser::ChangeTeamStmt &);
-  void Post(const parser::EndChangeTeamStmt &);
-  void Post(const parser::CoarrayAssociation &);
 
   // Definitions of construct names
   bool Pre(const parser::WhereConstructStmt &x) { return CheckDef(x.t); }
   bool Pre(const parser::ForallConstructStmt &x) { return CheckDef(x.t); }
+  bool Pre(const parser::ChangeTeamStmt &x) { return CheckDef(x.t); }
   bool Pre(const parser::CriticalStmt &x) { return CheckDef(x.t); }
   bool Pre(const parser::LabelDoStmt &x) { common::die("should not happen"); }
   bool Pre(const parser::NonLabelDoStmt &x) { return CheckDef(x.t); }
@@ -924,6 +910,7 @@ public:
   void Post(const parser::ElsewhereStmt &x) { CheckRef(x.v); }
   void Post(const parser::EndWhereStmt &x) { CheckRef(x.v); }
   void Post(const parser::EndForallStmt &x) { CheckRef(x.v); }
+  void Post(const parser::EndChangeTeamStmt &x) { CheckRef(x.t); }
   void Post(const parser::EndCriticalStmt &x) { CheckRef(x.v); }
   void Post(const parser::EndDoStmt &x) { CheckRef(x.v); }
   void Post(const parser::ElseIfStmt &x) { CheckRef(x.t); }
@@ -937,22 +924,12 @@ public:
   void Post(const parser::ExitStmt &x) { CheckRef(x.v); }
 
 private:
-  // R1105 selector -> expr | variable
-  // expr is set in either case unless there were errors
-  struct Selector {
-    Selector() {}
-    Selector(const parser::CharBlock &source, MaybeExpr &&expr,
-        const parser::Name *variable = nullptr)
-      : source{source}, expr{std::move(expr)}, variable{variable} {}
-    operator bool() const { return expr.has_value(); }
-    parser::CharBlock source;
-    MaybeExpr expr;
-    const parser::Name *variable{nullptr};
-  };
-  // association -> [associate-name =>] selector
+  // This represents: associate-name => expr | variable
+  // expr is set unless there were errors
   struct {
     const parser::Name *name{nullptr};
-    Selector selector;
+    const parser::Name *variable{nullptr};
+    MaybeExpr expr;
   } association_;
 
   template<typename T> bool CheckDef(const T &t) {
@@ -969,7 +946,6 @@ private:
   Symbol *MakeAssocEntity();
   void SetTypeFromAssociation(Symbol &);
   void SetAttrsFromAssociation(Symbol &);
-  Selector ResolveSelector(const parser::Selector &);
 };
 
 // Walk the parse tree and resolve names to symbols.
@@ -1026,6 +1002,17 @@ private:
   // Kind of procedure we are expecting to see in a ProcedureDesignator
   std::optional<Symbol::Flag> expectedProcFlag_;
   const SourceName *prevImportStmt_{nullptr};
+
+  // Each of these returns a pointer to a resolved Name (i.e. with symbol)
+  // or nullptr in case of error.
+  const parser::Name *ResolveStructureComponent(
+      const parser::StructureComponent &);
+  const parser::Name *ResolveArrayElement(const parser::ArrayElement &);
+  const parser::Name *ResolveCoindexedNamedObject(
+      const parser::CoindexedNamedObject &);
+  const parser::Name *ResolveDataRef(const parser::DataRef &);
+  const parser::Name *ResolveName(const parser::Name &);
+  const parser::Name *FindComponent(const parser::Name *, const parser::Name &);
 
   void CheckImports();
   void CheckImport(const SourceName &, const SourceName &);
@@ -2538,7 +2525,7 @@ void DeclarationVisitor::CheckScalarIntegerType(const parser::Name &name) {
     }
     if (auto *type{symbol.GetType()}) {
       if (!type->IsNumeric(TypeCategory::Integer)) {
-        Say(name, "Variable '%s' is not INTEGER"_err_en_US);
+        Say(name, "Variable '%s' is not integer"_err_en_US);
         return;
       }
     }
@@ -2553,10 +2540,12 @@ void DeclarationVisitor::Post(const parser::CodimensionDecl &x) {
   const auto &name{std::get<parser::Name>(x.t)};
   DeclareObjectEntity(name, Attrs{});
 }
+// TODO: ChangeTeamStmt also uses CodimensionDecl
 
 void DeclarationVisitor::Post(const parser::EntityDecl &x) {
   // TODO: may be under StructureStmt
   const auto &name{std::get<parser::ObjectName>(x.t)};
+  // TODO: CoarraySpec
   Attrs attrs{attrs_ ? HandleSaveName(name.source, *attrs_) : Attrs{}};
   Symbol &symbol{DeclareUnknownEntity(name, attrs)};
   if (auto &init{std::get<std::optional<parser::Initialization>>(x.t)}) {
@@ -4025,7 +4014,31 @@ bool ConstructVisitor::Pre(const parser::EndBlockStmt &x) {
 }
 
 void ConstructVisitor::Post(const parser::Selector &x) {
-  association_.selector = ResolveSelector(x);
+  association_ = {};
+  const parser::Name *variable{nullptr};
+  MaybeExpr expr{std::visit(
+      common::visitors{
+          [&](const parser::Expr &y) { return EvaluateExpr(y); },
+          [&](const parser::Variable &y) {
+            if (const auto *des{
+                    std::get_if<Indirection<parser::Designator>>(&y.u)}) {
+              if (const auto *dr{
+                      std::get_if<parser::DataRef>(&des->value().u)}) {
+                variable = std::get_if<parser::Name>(&dr->u);
+                if (variable && !FindSymbol(*variable)) {
+                  variable = nullptr;
+                  return MaybeExpr{};
+                }
+              }
+            }
+            return EvaluateExpr(y);
+          },
+      },
+      x.u)};
+  if (expr) {
+    association_.expr = std::move(expr);
+    association_.variable = variable;
+  }
 }
 
 bool ConstructVisitor::Pre(const parser::AssociateStmt &x) {
@@ -4047,47 +4060,14 @@ void ConstructVisitor::Post(const parser::Association &x) {
   }
 }
 
-bool ConstructVisitor::Pre(const parser::ChangeTeamStmt &x) {
-  CheckDef(x.t);
-  PushScope(Scope::Kind::Block, nullptr);
-  return true;
-}
-
-void ConstructVisitor::Post(const parser::CoarrayAssociation &x) {
-  const auto &decl{std::get<parser::CodimensionDecl>(x.t)};
-  const auto &name{std::get<parser::Name>(decl.t)};
-  if (auto *symbol{FindInScope(currScope(), name)}) {
-    const auto &selector{std::get<parser::Selector>(x.t)};
-    if (auto sel{ResolveSelector(selector)}) {
-      if (!sel.variable || sel.variable->symbol->Corank() == 0) {
-        Say(sel.source,  // C1116
-            "Selector in coarray association must name a coarray"_err_en_US);
-      } else if (auto dynType{sel.expr->GetType()}) {
-        if (!symbol->GetType()) {
-          symbol->SetType(ToDeclTypeSpec(std::move(*dynType)));
-        }
-      }
-    }
-  }
-}
-
-void ConstructVisitor::Post(const parser::EndChangeTeamStmt &x) {
-  PopScope();
-  CheckRef(x.t);
-}
-
 void ConstructVisitor::Post(const parser::SelectTypeStmt &x) {
   if (const std::optional<parser::Name> &name{std::get<1>(x.t)}) {
     // This isn't a name in the current scope, it is in each TypeGuardStmt
     MakePlaceholder(*name, MiscDetails::Kind::SelectTypeAssociateName);
     association_.name = &*name;
-  } else {
-    const auto *varName{association_.selector.variable};
-    if (!varName || !varName->symbol->has<ObjectEntityDetails>()) {
-      Say(association_.selector.source,  // C1157
-          "Selector is not a named variable: 'associate-name =>' is required"_err_en_US);
-      association_ = {};
-    }
+  } else if (!association_.variable) {
+    Say("Selector is not a named variable: 'associate-name =>' is required"_err_en_US);
+    association_ = {};
   }
 }
 
@@ -4135,9 +4115,9 @@ Symbol *ConstructVisitor::MakeAssocEntity() {
         "The associate name '%s' is already used in this associate statement"_err_en_US);
     return nullptr;
   }
-  if (auto &expr{association_.selector.expr}) {
+  if (auto &expr{association_.expr}) {
     symbol.set_details(AssocEntityDetails{std::move(*expr)});
-    association_.selector.expr.reset();
+    association_.expr.reset();
   } else {
     symbol.set_details(AssocEntityDetails{});
   }
@@ -4146,11 +4126,11 @@ Symbol *ConstructVisitor::MakeAssocEntity() {
 
 // Set the type of symbol based on the current association variable or expr.
 void ConstructVisitor::SetTypeFromAssociation(Symbol &symbol) {
-  if (association_.selector.variable) {
-    const Symbol *varSymbol{association_.selector.variable->symbol};
-    CHECK(varSymbol);
-    if (const DeclTypeSpec * type{varSymbol->GetType()}) {
-      symbol.SetType(*type);
+  if (association_.variable) {
+    if (const Symbol * varSymbol{association_.variable->symbol}) {
+      if (const DeclTypeSpec * type{varSymbol->GetType()}) {
+        symbol.SetType(*type);
+      }
     }
   } else {
     auto &details{symbol.get<AssocEntityDetails>()};
@@ -4176,8 +4156,8 @@ void ConstructVisitor::SetTypeFromAssociation(Symbol &symbol) {
 
 // If current selector is a variable, set some of its attributes on symbol.
 void ConstructVisitor::SetAttrsFromAssociation(Symbol &symbol) {
-  if (association_.selector.variable) {
-    if (const auto *varSymbol{association_.selector.variable->symbol}) {
+  if (association_.variable) {
+    if (const auto *varSymbol{association_.variable->symbol}) {
       symbol.attrs() |= varSymbol->attrs() &
           Attrs{Attr::TARGET, Attr::ASYNCHRONOUS, Attr::VOLATILE,
               Attr::CONTIGUOUS};
@@ -4186,24 +4166,6 @@ void ConstructVisitor::SetAttrsFromAssociation(Symbol &symbol) {
       }
     }
   }
-}
-
-ConstructVisitor::Selector ConstructVisitor::ResolveSelector(
-    const parser::Selector &x) {
-  return std::visit(
-      common::visitors{
-          [&](const parser::Expr &y) {
-            return Selector{y.source, EvaluateExpr(y)};
-          },
-          [&](const parser::Variable &y) {
-            if (const auto *variable{ResolveVariable(y)}) {
-              return Selector{variable->source, EvaluateExpr(y), variable};
-            } else {
-              return Selector{};
-            }
-          },
-      },
-      x.u);
 }
 
 const DeclTypeSpec &ConstructVisitor::ToDeclTypeSpec(
@@ -4280,24 +4242,22 @@ bool ResolveNamesVisitor::Pre(const parser::ImportStmt &x) {
   return false;
 }
 
-const parser::Name *DeclarationVisitor::ResolveStructureComponent(
+const parser::Name *ResolveNamesVisitor::ResolveStructureComponent(
     const parser::StructureComponent &x) {
   return FindComponent(ResolveDataRef(x.base), x.component);
 }
 
-const parser::Name *DeclarationVisitor::ResolveDesignator(
-    const parser::Designator &x) {
-  return std::visit(
-      common::visitors{
-          [&](const parser::DataRef &x) { return ResolveDataRef(x); },
-          [&](const parser::Substring &x) {
-            return ResolveDataRef(std::get<parser::DataRef>(x.t));
-          },
-      },
-      x.u);
+const parser::Name *ResolveNamesVisitor::ResolveArrayElement(
+    const parser::ArrayElement &x) {
+  return ResolveDataRef(x.base);
 }
 
-const parser::Name *DeclarationVisitor::ResolveDataRef(
+const parser::Name *ResolveNamesVisitor::ResolveCoindexedNamedObject(
+    const parser::CoindexedNamedObject &x) {
+  return nullptr;  // TODO
+}
+
+const parser::Name *ResolveNamesVisitor::ResolveDataRef(
     const parser::DataRef &x) {
   return std::visit(
       common::visitors{
@@ -4305,29 +4265,11 @@ const parser::Name *DeclarationVisitor::ResolveDataRef(
           [=](const Indirection<parser::StructureComponent> &y) {
             return ResolveStructureComponent(y.value());
           },
-          [=](const auto &y) { return ResolveDataRef(y.value().base); },
-      },
-      x.u);
-}
-
-const parser::Name *DeclarationVisitor::ResolveVariable(
-    const parser::Variable &x) {
-  return std::visit(
-      common::visitors{
-          [&](const common::Indirection<parser::Designator> &y) {
-            return ResolveDesignator(y.value());
+          [=](const Indirection<parser::ArrayElement> &y) {
+            return ResolveArrayElement(y.value());
           },
-          [&](const common::Indirection<parser::FunctionReference> &y) {
-            const auto &proc{
-                std::get<parser::ProcedureDesignator>(y.value().v.t)};
-            return std::visit(
-                common::visitors{
-                    [&](const parser::Name &z) { return &z; },
-                    [&](const parser::ProcComponentRef &z) {
-                      return ResolveStructureComponent(z.v.thing);
-                    },
-                },
-                proc.u);
+          [=](const Indirection<parser::CoindexedNamedObject> &y) {
+            return ResolveCoindexedNamedObject(y.value());
           },
       },
       x.u);
@@ -4335,7 +4277,7 @@ const parser::Name *DeclarationVisitor::ResolveVariable(
 
 // If implicit types are allowed, ensure name is in the symbol table.
 // Otherwise, report an error if it hasn't been declared.
-const parser::Name *DeclarationVisitor::ResolveName(const parser::Name &name) {
+const parser::Name *ResolveNamesVisitor::ResolveName(const parser::Name &name) {
   if (FindSymbol(name)) {
     if (CheckUseError(name)) {
       return nullptr;  // reported an error
@@ -4361,7 +4303,7 @@ const parser::Name *DeclarationVisitor::ResolveName(const parser::Name &name) {
 // base is a part-ref of a derived type; find the named component in its type.
 // Also handles intrinsic type parameter inquiries (%kind, %len) and
 // COMPLEX component references (%re, %im).
-const parser::Name *DeclarationVisitor::FindComponent(
+const parser::Name *ResolveNamesVisitor::FindComponent(
     const parser::Name *base, const parser::Name &component) {
   if (!base || !base->symbol) {
     return nullptr;
@@ -4661,7 +4603,6 @@ void ResolveNamesVisitor::Post(const parser::AllocateObject &x) {
       },
       x.u);
 }
-
 bool ResolveNamesVisitor::Pre(const parser::PointerAssignmentStmt &x) {
   const auto &dataRef{std::get<parser::DataRef>(x.t)};
   const auto &bounds{std::get<parser::PointerAssignmentStmt::Bounds>(x.t)};
@@ -4669,16 +4610,36 @@ bool ResolveNamesVisitor::Pre(const parser::PointerAssignmentStmt &x) {
   ResolveDataRef(dataRef);
   Walk(bounds);
   // Resolve unrestricted specific intrinsic procedures as in "p => cos".
-  if (const parser::Name * name{parser::Unwrap<parser::Name>(expr)}) {
-    if (NameIsKnownOrIntrinsic(*name)) {
-      return false;
+  if (const auto *designator{
+          std::get_if<common::Indirection<parser::Designator>>(&expr.u)}) {
+    if (const parser::Name *
+        name{std::visit(
+            common::visitors{
+                [](const parser::ObjectName &n) { return &n; },
+                [](const parser::DataRef &dataRef) {
+                  return std::get_if<parser::Name>(&dataRef.u);
+                },
+                [](const auto &) -> const parser::Name * { return nullptr; },
+            },
+            designator->value().u)}) {
+      if (NameIsKnownOrIntrinsic(*name)) {
+        return false;
+      }
     }
   }
   Walk(expr);
   return false;
 }
 void ResolveNamesVisitor::Post(const parser::Designator &x) {
-  ResolveDesignator(x);
+  std::visit(
+      common::visitors{
+          [&](const parser::ObjectName &x) { ResolveName(x); },
+          [&](const parser::DataRef &x) { ResolveDataRef(x); },
+          [&](const parser::Substring &x) {
+            ResolveDataRef(std::get<parser::DataRef>(x.t));
+          },
+      },
+      x.u);
 }
 
 template<typename T>

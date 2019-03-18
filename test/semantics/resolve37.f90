@@ -18,7 +18,7 @@ integer :: n = 2
 !ERROR: Must be a constant value
 parameter(m=n)
 integer(k) :: x
-!ERROR: Must have INTEGER type, but is REAL(4)
+!ERROR: Must have INTEGER type
 integer(l) :: y
 !ERROR: Must be a constant value
 integer(n) :: z
@@ -27,10 +27,10 @@ type t(k)
 end type
 !ERROR: Type parameter 'k' lacks a value and has no default
 type(t( &
-!ERROR: Must have INTEGER type, but is LOGICAL(4)
+!ERROR: Must have INTEGER type
   .true.)) :: w
-!ERROR: Must have INTEGER type, but is REAL(4)
+!ERROR: Must have INTEGER type
 real :: u(l*2)
-!ERROR: Must have INTEGER type, but is REAL(4)
+!ERROR: Must have INTEGER type
 character(len=l) :: v
 end

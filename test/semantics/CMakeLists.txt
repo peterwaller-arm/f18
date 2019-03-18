@@ -76,8 +76,6 @@ set(ERROR_TESTS
   resolve47.f90
   resolve48.f90
   resolve49.f90
-  resolve50.f90
-  resolve51.f90
   structconst01.f90
   structconst02.f90
   structconst03.f90
@@ -93,16 +91,7 @@ set(ERROR_TESTS
   computed-goto02.f90
   nullify01.f90
   nullify02.f90
-  deallocate01.f90
-  deallocate04.f90
-  deallocate05.f90
-  coarrays01.f90
-  coarrays02.f90
-  altreturn01.f90
-# Issue 407
-#  altreturn02.f90
-#  altreturn03.f90
-  altreturn04.f90
+  stop.f90
 )
 
 # These test files have expected symbols in the source

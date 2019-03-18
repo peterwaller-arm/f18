@@ -20,12 +20,15 @@
 namespace Fortran::semantics {
 
 void IfStmtChecker::Leave(const parser::IfStmt &ifStmt) {
+  // R1139 Check for a scalar logical expression
+  auto &expr{std::get<parser::ScalarLogicalExpr>(ifStmt.t).thing.thing.value()};
+  CheckScalarLogicalExpr(expr, context_.messages());
   // C1143 Check that the action stmt is not an if stmt
   const auto &body{
       std::get<parser::UnlabeledStatement<parser::ActionStmt>>(ifStmt.t)};
   if (std::holds_alternative<common::Indirection<parser::IfStmt>>(
           body.statement.u)) {
-    context_.Say(
+    context_.messages().Say(
         body.source, "IF statement is not allowed in IF statement"_err_en_US);
   }
 }

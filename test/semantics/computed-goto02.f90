@@ -20,15 +20,15 @@ COMPLEX Z
 LOGICAL L
 INTEGER, DIMENSION (2) :: B
 
-!ERROR: Must have INTEGER type, but is REAL(4)
+!ERROR: Computed GOTO expression must be an integer expression
 GOTO (100) 1.5
-!ERROR: Must have INTEGER type, but is LOGICAL(4)
+!ERROR: Computed GOTO expression must be an integer expression
 GOTO (100) .TRUE.
-!ERROR: Must have INTEGER type, but is REAL(4)
+!ERROR: Computed GOTO expression must be an integer expression
 GOTO (100) R
-!ERROR: Must have INTEGER type, but is COMPLEX(4)
+!ERROR: Computed GOTO expression must be an integer expression
 GOTO (100) Z
-!ERROR: Must be a scalar value, but is a rank-1 array
+!ERROR: Computed GOTO expression must be a scalar expression
 GOTO (100) B
 
 100 CONTINUE

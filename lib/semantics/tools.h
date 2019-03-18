@@ -18,26 +18,14 @@
 // Simple predicates and look-up functions that are best defined
 // canonically for use in semantic checking.
 
-#include "../common/Fortran.h"
+#include "scope.h"
+#include "symbol.h"
+#include "type.h"
 #include "../evaluate/variable.h"
-
-namespace Fortran::parser {
-class Messages;
-struct Expr;
-struct Name;
-struct Variable;
-}
-
-namespace Fortran::evaluate {
-struct GenericExprWrapper;
-}
+#include "../parser/message.h"
+#include "../parser/parse-tree.h"
 
 namespace Fortran::semantics {
-
-class DeclTypeSpec;
-class DerivedTypeSpec;
-class Scope;
-class Symbol;
 
 const Symbol *FindCommonBlockContaining(const Symbol &object);
 const Scope *FindProgramUnitContaining(const Scope &);
@@ -59,11 +47,8 @@ bool IsPointerDummy(const Symbol &);
 bool IsFunction(const Symbol &);
 bool IsPureFunction(const Symbol &);
 bool IsPureFunction(const Scope &);
-bool IsProcedure(const Symbol &);
 bool IsProcName(const Symbol &symbol);  // proc-name
 bool IsVariableName(const Symbol &symbol);  // variable-name
-bool IsAllocatable(const Symbol &);
-bool IsAllocatableOrPointer(const Symbol &);
 
 // Determines whether an object might be visible outside a
 // PURE function (C1594); returns a non-null Symbol pointer for
@@ -98,5 +83,9 @@ const Symbol *FindExternallyVisibleObject(
 
 bool ExprHasTypeCategory(
     const evaluate::GenericExprWrapper &expr, const common::TypeCategory &type);
+bool ExprHasTypeKind(const evaluate::GenericExprWrapper &expr, int kind);
+bool ExprIsScalar(const evaluate::GenericExprWrapper &expr);
+void CheckScalarLogicalExpr(
+    const parser::Expr &expr, parser::Messages &messages);
 }
 #endif  // FORTRAN_SEMANTICS_TOOLS_H_

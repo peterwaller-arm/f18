@@ -29,11 +29,6 @@ module ieee_exceptions
   end interface
 end module ieee_exceptions
 
-module iso_fortran_env
-  type :: team_type
-  end type
-end
-
 subroutine do_concurrent_test1(i,n)
   implicit none
   integer :: i, n
@@ -46,10 +41,8 @@ end subroutine do_concurrent_test1
 
 subroutine do_concurrent_test2(i,j,n,flag)
   use ieee_exceptions
-  use iso_fortran_env, only: team_type
   implicit none
-  integer :: i, n, flag, flag2
-  type(team_type) :: j
+  integer :: i, j, n, flag, flag2
   do concurrent (i = 1:n)
     change team (j)
       call ieee_get_flag(flag, flag2)

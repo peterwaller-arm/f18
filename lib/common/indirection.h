@@ -26,7 +26,7 @@
 //    template class Fortran::common::Indirection<FORWARD_TYPE>;
 // in one C++ source file later where a definition of the type is visible.
 
-#include "idioms.h"
+#include "../common/idioms.h"
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -64,6 +64,8 @@ public:
 
   bool operator==(const A &that) const { return *p_ == that; }
   bool operator==(const Indirection &that) const { return *p_ == *that.p_; }
+  bool operator!=(const A &that) const { return *p_ != that; }
+  bool operator!=(const Indirection &that) const { return *p_ != *that.p_; }
 
   template<typename... ARGS>
   static common::IfNoLvalue<Indirection, ARGS...> Make(ARGS &&... args) {
@@ -116,6 +118,8 @@ public:
 
   bool operator==(const A &that) const { return *p_ == that; }
   bool operator==(const Indirection &that) const { return *p_ == *that.p_; }
+  bool operator!=(const A &that) const { return *p_ != that; }
+  bool operator!=(const Indirection &that) const { return *p_ != *that.p_; }
 
   template<typename... ARGS>
   static common::IfNoLvalue<Indirection, ARGS...> Make(ARGS &&... args) {

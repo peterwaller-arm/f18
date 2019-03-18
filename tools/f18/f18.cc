@@ -232,9 +232,6 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
     if (semantics.AnyFatalError()) {
       std::cerr << driver.prefix << "semantic errors in " << path << '\n';
       exitStatus = EXIT_FAILURE;
-      if (driver.dumpParseTree) {
-        Fortran::parser::DumpTree(std::cout, parseTree);
-      }
       return {};
     }
     if (driver.dumpUnparseWithSymbols) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2019, Arm Ltd.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef FORTRAN_SEMANTICS_CHECK_RETURN_H_
-#define FORTRAN_SEMANTICS_CHECK_RETURN_H_
+#ifndef FORTRAN_SEMANTICS_CHECK_STOP_H_
+#define FORTRAN_SEMANTICS_CHECK_STOP_H_
 
 #include "semantics.h"
 
 namespace Fortran::parser {
-struct ReturnStmt;
+struct StopStmt;
 }
 
 namespace Fortran::semantics {
-class ReturnStmtChecker : public virtual BaseChecker {
+
+// Semantic analysis of STOP and ERROR STOP statements.
+class StopChecker : public virtual BaseChecker {
 public:
-  ReturnStmtChecker(SemanticsContext &context) : context_{context} {}
-  void Leave(const parser::ReturnStmt &);
+  explicit StopChecker(SemanticsContext &);
+  ~StopChecker();
+
+  void Enter(const parser::StopStmt &);
 
 private:
   SemanticsContext &context_;
 };
-}
-#endif  // FORTRAN_SEMANTICS_CHECK_RETURN_H_
+
+}  // namespace Fortran::semantics
+
+#endif  // FORTRAN_SEMANTICS_CHECK_STOP_H_

@@ -14,11 +14,7 @@
 
 #include "tools.h"
 #include "scope.h"
-#include "symbol.h"
-#include "type.h"
-#include "../common/indirection.h"
-#include "../parser/message.h"
-#include "../parser/parse-tree.h"
+#include "../evaluate/variable.h"
 #include <algorithm>
 #include <set>
 #include <variant>
@@ -127,16 +123,8 @@ bool IsPointer(const Symbol &symbol) {
   return symbol.attrs().test(Attr::POINTER);
 }
 
-bool IsAllocatable(const Symbol &symbol) {
-  return symbol.attrs().test(Attr::ALLOCATABLE);
-}
-
 bool IsPointerDummy(const Symbol &symbol) {
   return IsPointer(symbol) && IsDummy(symbol);
-}
-
-bool IsAllocatableOrPointer(const Symbol &symbol) {
-  return IsPointer(symbol) || IsAllocatable(symbol);
 }
 
 bool IsParameter(const Symbol &symbol) {
@@ -154,20 +142,15 @@ bool IsProcName(const Symbol &symbol) {
 }
 
 bool IsFunction(const Symbol &symbol) {
-  return std::visit(
-      common::visitors{
-          [](const SubprogramDetails &x) { return x.isFunction(); },
-          [&](const SubprogramNameDetails &x) {
-            return symbol.test(Symbol::Flag::Function);
-          },
-          [](const ProcEntityDetails &x) {
-            const auto &ifc{x.interface()};
-            return ifc.type() || (ifc.symbol() && IsFunction(*ifc.symbol()));
-          },
-          [](const UseDetails &x) { return IsFunction(x.symbol()); },
-          [](const auto &) { return false; },
-      },
-      symbol.details());
+  if (const auto *procDetails{symbol.detailsIf<ProcEntityDetails>()}) {
+    return procDetails->interface().type() != nullptr ||
+        (procDetails->interface().symbol() != nullptr &&
+            IsFunction(*procDetails->interface().symbol()));
+  } else if (const auto *subprogram{symbol.detailsIf<SubprogramDetails>()}) {
+    return subprogram->isFunction();
+  } else {
+    return false;
+  }
 }
 
 bool IsPureFunction(const Symbol &symbol) {
@@ -180,18 +163,6 @@ bool IsPureFunction(const Scope &scope) {
   } else {
     return false;
   }
-}
-
-bool IsProcedure(const Symbol &symbol) {
-  return std::visit(
-      common::visitors{
-          [](const SubprogramDetails &) { return true; },
-          [](const SubprogramNameDetails &) { return true; },
-          [](const ProcEntityDetails &x) { return true; },
-          [](const UseDetails &x) { return IsProcedure(x.symbol()); },
-          [](const auto &) { return false; },
-      },
-      symbol.details());
 }
 
 static const Symbol *FindPointerComponent(
@@ -279,5 +250,28 @@ bool ExprHasTypeCategory(const evaluate::GenericExprWrapper &expr,
     const common::TypeCategory &type) {
   auto dynamicType{expr.v.GetType()};
   return dynamicType.has_value() && dynamicType->category == type;
+}
+
+bool ExprHasTypeKind(const evaluate::GenericExprWrapper &expr, int kind) {
+  auto dynamicType{expr.v.GetType()};
+  return dynamicType.has_value() && dynamicType->kind == kind;
+}
+
+bool ExprIsScalar(const evaluate::GenericExprWrapper &expr) {
+  return !(expr.v.Rank() > 0);
+}
+
+void CheckScalarLogicalExpr(
+    const parser::Expr &expr, parser::Messages &messages) {
+  // TODO: should be asserting that typedExpr is not null
+  if (expr.typedExpr == nullptr) {
+    return;
+  }
+  if (expr.typedExpr->v.Rank() > 0) {
+    messages.Say(expr.source, "Expected a scalar LOGICAL expression"_err_en_US);
+  } else if (!ExprHasTypeCategory(
+                 *expr.typedExpr, common::TypeCategory::Logical)) {
+    messages.Say(expr.source, "Expected a LOGICAL expression"_err_en_US);
+  }
 }
 }

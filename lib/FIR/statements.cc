@@ -125,11 +125,38 @@ LoadInsn::LoadInsn(Statement *addr) : address_{addr} {
   CHECK(GetAddressable(addr));
 }
 
-// Store ctor
+// Store ctors
+StoreInsn::StoreInsn(QualifiedStmt<Addressable_impl> addr, BasicBlock *val)
+  : address_{addr}, value_{val} {
+  CHECK(address_);
+  CHECK(val);
+}
 StoreInsn::StoreInsn(QualifiedStmt<Addressable_impl> addr, Value val)
   : address_{addr}, value_{val} {
   CHECK(address_);
-  CHECK(!IsNothing(value_));
+}
+StoreInsn::StoreInsn(
+    QualifiedStmt<Addressable_impl> addr, QualifiedStmt<ApplyExprStmt> val)
+  : address_{addr}, value_{val} {
+  CHECK(address_);
+  CHECK(val);
+}
+StoreInsn::StoreInsn(
+    QualifiedStmt<Addressable_impl> addr, QualifiedStmt<Addressable_impl> val)
+  : address_{addr}, value_{val} {
+  CHECK(address_);
+  CHECK(val);
+}
+
+static std::string dumpStoreValue(const StoreInsn::ValueType &v) {
+  return std::visit(
+      common::visitors{
+          [](const Value &v) { return v.dump(); },
+          [](const ApplyExprStmt *e) { return FIR::dump(e->expression()); },
+          [](const Addressable_impl *e) { return FIR::dump(e->address()); },
+          [](const BasicBlock *bb) { return ToString(bb); },
+      },
+      v);
 }
 
 // dump is intended for debugging rather than idiomatic FIR output
@@ -183,7 +210,7 @@ std::string Statement::dump() const {
             return '%' + ToString(&u) + ": load " + insn.address().dump();
           },
           [](const StoreInsn &insn) {
-            std::string value{insn.value().dump()};
+            std::string value{dumpStoreValue(insn.value())};
             return "store " + value + " to " +
                 FIR::dump(insn.address()->address());
           },

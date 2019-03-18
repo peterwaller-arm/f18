@@ -22,9 +22,3 @@ subroutine s1
   !ERROR: No explicit type declared for 'b'
   x = b
 end
-
-subroutine s2
-  !ERROR: Associate name 'a' must have a type
-  associate (a => z'1')
-  end associate
-end

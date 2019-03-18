@@ -46,7 +46,6 @@ public:
       symbol->set_scope(this);
     }
   }
-  Scope(const Scope &) = delete;
 
   bool operator==(const Scope &that) const { return this == &that; }
   bool operator!=(const Scope &that) const { return this != &that; }

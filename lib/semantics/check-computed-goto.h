@@ -24,7 +24,8 @@ struct ComputedGotoStmt;
 namespace Fortran::semantics {
 class ComputedGotoStmtChecker : public virtual BaseChecker {
 public:
-  ComputedGotoStmtChecker(SemanticsContext &context) : context_{context} {}
+  inline ComputedGotoStmtChecker(SemanticsContext &context)
+    : context_{context} {}
   void Leave(const parser::ComputedGotoStmt &);
 
 private:

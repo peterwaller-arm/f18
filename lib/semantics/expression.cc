@@ -28,16 +28,24 @@
 #include <optional>
 #include <set>
 
-// #define DUMP_ON_FAILURE 1
-#if DUMP_ON_FAILURE
+// TODO pmk remove when scaffolding is obsolete
+#undef PMKDEBUG  // #define PMKDEBUG 1
+#if PMKDEBUG
 #include "../parser/dump-parse-tree.h"
 #include <iostream>
 #endif
-// #define CRASH_ON_FAILURE
 
 // Typedef for optional generic expressions (ubiquitous in this file)
 using MaybeExpr =
     std::optional<Fortran::evaluate::Expr<Fortran::evaluate::SomeType>>;
+
+namespace Fortran::parser {
+bool SourceLocationFindingVisitor::Pre(const Expr &x) {
+  source = x.source;
+  return false;
+}
+void SourceLocationFindingVisitor::Post(const CharBlock &at) { source = at; }
+}
 
 // Much of the code that implements semantic analysis of expressions is
 // tightly coupled with their typed representations in lib/evaluate,
@@ -334,7 +342,6 @@ static void FixMisparsedSubstring(const parser::Designator &d) {
 }
 
 MaybeExpr ExpressionAnalyzer::Analyze(const parser::Designator &d) {
-  auto save{GetContextualMessages().SetLocation(d.source)};
   FixMisparsedSubstring(d);
   // These checks have to be deferred to these "top level" data-refs where
   // we can be sure that there are no following subscripts (yet).
@@ -1398,59 +1405,20 @@ MaybeExpr ExpressionAnalyzer::Analyze(
   return AsMaybeExpr(Expr<SomeDerived>{std::move(result)});
 }
 
-std::optional<ProcedureDesignator>
-ExpressionAnalyzer::AnalyzeProcedureComponentRef(
-    const parser::ProcComponentRef &pcr) {
-  const parser::StructureComponent &sc{pcr.v.thing};
-  const auto &name{sc.component.source};
-  if (MaybeExpr base{Analyze(sc.base)}) {
-    Symbol *sym{sc.component.symbol};
-    if (sym == nullptr) {
-      Say(sc.component.source,
-          "procedure component name was not resolved to a symbol"_err_en_US);
-    } else if (auto *dtExpr{UnwrapExpr<Expr<SomeDerived>>(*base)}) {
-      const semantics::DerivedTypeSpec *dtSpec{nullptr};
-      if (std::optional<DynamicType> dtDyTy{dtExpr->GetType()}) {
-        dtSpec = dtDyTy->derived;
-      }
-      if (dtSpec == nullptr || dtSpec->scope() == nullptr) {
-        Say(name,
-            "TODO: base of procedure component reference lacks a derived type"_err_en_US);
-      } else if (std::optional<DataRef> dataRef{
-                     ExtractDataRef(std::move(*dtExpr))}) {
-        if (auto component{
-                CreateComponent(std::move(*dataRef), *sym, *dtSpec->scope())}) {
-          return ProcedureDesignator{std::move(*component)};
-        } else {
-          Say(name,
-              "procedure component is not in scope of derived TYPE(%s)"_err_en_US,
-              dtSpec->typeSymbol().name().ToString().data());
-        }
-      } else {
-        Say(name,
-            "base of procedure component reference must be a data reference"_err_en_US);
-      }
-    } else {
-      Say(name,
-          "base of procedure component reference is not a derived type object"_err_en_US);
-    }
-  }
-  return std::nullopt;
-}
-
 auto ExpressionAnalyzer::Procedure(const parser::ProcedureDesignator &pd,
     ActualArguments &arguments) -> std::optional<CallAndArguments> {
   return std::visit(
       common::visitors{
           [&](const parser::Name &n) -> std::optional<CallAndArguments> {
-            const Symbol *symbol{n.symbol};
-            if (symbol == nullptr) {
+            if (n.symbol == nullptr) {
               Say("TODO INTERNAL no symbol for procedure designator name '%s'"_err_en_US,
                   n.ToString().data());
               return std::nullopt;
             }
-            if (IsProcedure(*symbol)) {
-              if (symbol->HasExplicitInterface()) {
+            const Symbol &ultimate{n.symbol->GetUltimate()};
+            if (const auto *proc{
+                    ultimate.detailsIf<semantics::ProcEntityDetails>()}) {
+              if (proc->HasExplicitInterface()) {
                 // TODO: check actual arguments vs. interface
               } else {
                 CallCharacteristics cc{n.source};
@@ -1467,7 +1435,7 @@ auto ExpressionAnalyzer::Procedure(const parser::ProcedureDesignator &pd,
                 }
               }
               return {CallAndArguments{
-                  ProcedureDesignator{*symbol}, std::move(arguments)}};
+                  ProcedureDesignator{*n.symbol}, std::move(arguments)}};
             } else {
               Say(n.source, "not a procedure"_err_en_US);
               return std::nullopt;
@@ -1475,11 +1443,10 @@ auto ExpressionAnalyzer::Procedure(const parser::ProcedureDesignator &pd,
           },
           [&](const parser::ProcComponentRef &pcr)
               -> std::optional<CallAndArguments> {
-            if (std::optional<ProcedureDesignator> proc{
-                    AnalyzeProcedureComponentRef(pcr)}) {
+            if (MaybeExpr component{Analyze(pcr.v)}) {
               // TODO distinguish PCR from TBP
               // TODO optional PASS argument for TBP
-              return {CallAndArguments{std::move(*proc), std::move(arguments)}};
+              return std::nullopt;
             } else {
               return std::nullopt;
             }
@@ -1496,7 +1463,6 @@ MaybeExpr ExpressionAnalyzer::Analyze(
   // TODO: Actual arguments that are procedures and procedure pointers need to
   // be detected and represented (they're not expressions).
   // TODO: C1534: Don't allow a "restricted" specific intrinsic to be passed.
-  auto save{GetContextualMessages().SetLocation(funcRef.v.source)};
   ActualArguments arguments;
   for (const auto &arg :
       std::get<std::list<parser::ActualArgSpec>>(funcRef.v.t)) {
@@ -1862,28 +1828,14 @@ MaybeExpr ExpressionAnalyzer::Analyze(const parser::Expr &expr) {
     return std::make_optional<Expr<SomeType>>(expr.typedExpr->v);
   } else {
     FixMisparsedFunctionReference(context_, expr.u);
-    MaybeExpr result;
     if (!expr.source.empty()) {
       // Analyze the expression in a specified source position context for
       // better error reporting.
       auto save{GetFoldingContext().messages().SetLocation(expr.source)};
-      result = Analyze(expr.u);
+      return Analyze(expr.u);
     } else {
-      result = Analyze(expr.u);
+      return Analyze(expr.u);
     }
-    if (result.has_value()) {
-      expr.typedExpr.reset(new GenericExprWrapper{common::Clone(*result)});
-    } else if (!fatalErrors_) {
-      if (!context_.AnyFatalError()) {
-#if DUMP_ON_FAILURE
-        parser::DumpTree(std::cout << "Expression analysis failed on: ", expr);
-#elif CRASH_ON_FAILURE
-        common::die("Expression analysis failed without emitting an error");
-#endif
-      }
-      fatalErrors_ = true;
-    }
-    return result;
   }
 }
 
@@ -1985,32 +1937,10 @@ std::optional<int> ExpressionAnalyzer::IsAcImpliedDo(
     return std::nullopt;
   }
 }
-
-void ExpressionAnalyzer::EnforceTypeConstraint(parser::CharBlock at,
-    const MaybeExpr &result, TypeCategory category, bool defaultKind) {
-  if (result.has_value()) {
-    if (auto type{result->GetType()}) {
-      if (type->category != category) {
-        Say(at, "Must have %s type, but is %s"_err_en_US,
-            parser::ToUpperCaseLetters(EnumToString(category)).data(),
-            parser::ToUpperCaseLetters(type->AsFortran()).data());
-      } else if (defaultKind) {
-        int kind{context().defaultKinds().GetDefaultKind(category)};
-        if (type->kind != kind) {
-          Say(at, "Must have default kind(%d) of %s type, but is %s"_err_en_US,
-              kind, parser::ToUpperCaseLetters(EnumToString(category)).data(),
-              parser::ToUpperCaseLetters(type->AsFortran()).data());
-        }
-      }
-    } else {
-      Say(at, "Must have %s type, but is typeless"_err_en_US,
-          parser::ToUpperCaseLetters(EnumToString(category)).data());
-    }
-  }
-}
 }
 
 namespace Fortran::semantics {
+
 evaluate::Expr<evaluate::SubscriptInteger> AnalyzeKindSelector(
     SemanticsContext &context, common::TypeCategory category,
     const std::optional<parser::KindSelector> &selector) {
@@ -2019,8 +1949,35 @@ evaluate::Expr<evaluate::SubscriptInteger> AnalyzeKindSelector(
   return analyzer.AnalyzeKindSelector(category, selector);
 }
 
-bool ExprChecker::Walk(const parser::Program &program) {
-  parser::Walk(program, *this);
-  return !context_.AnyFatalError();
+void ExprChecker::Enter(const parser::Expr &expr) {
+  if (!expr.typedExpr) {
+    if (MaybeExpr checked{AnalyzeExpr(context_, expr)}) {
+#if PMKDEBUG
+//        std::cout << "checked expression: " << *checked << '\n';
+#endif
+      expr.typedExpr.reset(
+          new evaluate::GenericExprWrapper{std::move(*checked)});
+    } else {
+#if PMKDEBUG
+      std::cout << "TODO: expression analysis failed for this expression: ";
+      parser::DumpTree(std::cout, expr);
+#endif
+    }
+  }
+}
+
+void ExprChecker::Enter(const parser::Variable &var) {
+#if PMKDEBUG
+  if (MaybeExpr checked{AnalyzeExpr(context_, var)}) {
+//    std::cout << "checked variable: " << *checked << '\n';
+#else
+  if (AnalyzeExpr(context_, var)) {
+#endif
+  } else {
+#if PMKDEBUG
+    std::cout << "TODO: expression analysis failed for this variable: ";
+    DumpTree(std::cout, var);
+#endif
+  }
 }
 }

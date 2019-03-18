@@ -55,7 +55,6 @@ CLASS_TRAIT(EmptyTrait)
 CLASS_TRAIT(WrapperTrait)
 CLASS_TRAIT(UnionTrait)
 CLASS_TRAIT(TupleTrait)
-CLASS_TRAIT(ConstraintTrait)
 
 // Some parse tree nodes have fields in them to cache the results of a
 // successful semantic analysis later.  Their types are forward declared
@@ -273,7 +272,6 @@ using Location = const char *;
 // These template class wrappers correspond to the Standard's modifiers
 // scalar-xyz, constant-xzy, int-xzy, default-char-xyz, & logical-xyz.
 template<typename A> struct Scalar {
-  using ConstraintTrait = std::true_type;
   Scalar(Scalar &&that) = default;
   Scalar(A &&that) : thing(std::move(that)) {}
   Scalar &operator=(Scalar &&) = default;
@@ -281,7 +279,6 @@ template<typename A> struct Scalar {
 };
 
 template<typename A> struct Constant {
-  using ConstraintTrait = std::true_type;
   Constant(Constant &&that) = default;
   Constant(A &&that) : thing(std::move(that)) {}
   Constant &operator=(Constant &&) = default;
@@ -289,7 +286,6 @@ template<typename A> struct Constant {
 };
 
 template<typename A> struct Integer {
-  using ConstraintTrait = std::true_type;
   Integer(Integer &&that) = default;
   Integer(A &&that) : thing(std::move(that)) {}
   Integer &operator=(Integer &&) = default;
@@ -297,7 +293,6 @@ template<typename A> struct Integer {
 };
 
 template<typename A> struct Logical {
-  using ConstraintTrait = std::true_type;
   Logical(Logical &&that) = default;
   Logical(A &&that) : thing(std::move(that)) {}
   Logical &operator=(Logical &&) = default;
@@ -305,7 +300,6 @@ template<typename A> struct Logical {
 };
 
 template<typename A> struct DefaultChar {
-  using ConstraintTrait = std::true_type;
   DefaultChar(DefaultChar &&that) = default;
   DefaultChar(A &&that) : thing(std::move(that)) {}
   DefaultChar &operator=(DefaultChar &&) = default;
@@ -1584,16 +1578,17 @@ struct SectionSubscript {
 using Cosubscript = ScalarIntExpr;
 
 // R1115 team-value -> scalar-expr
-WRAPPER_CLASS(TeamValue, Scalar<common::Indirection<Expr>>);
+using TeamValue = Scalar<common::Indirection<Expr>>;
 
 // R926 image-selector-spec ->
 //        STAT = stat-variable | TEAM = team-value |
 //        TEAM_NUMBER = scalar-int-expr
 struct ImageSelectorSpec {
   WRAPPER_CLASS(Stat, Scalar<Integer<common::Indirection<Variable>>>);
+  WRAPPER_CLASS(Team, TeamValue);
   WRAPPER_CLASS(Team_Number, ScalarIntExpr);
   UNION_CLASS_BOILERPLATE(ImageSelectorSpec);
-  std::variant<Stat, TeamValue, Team_Number> u;
+  std::variant<Stat, Team, Team_Number> u;
 };
 
 // R924 image-selector ->
@@ -1762,8 +1757,7 @@ struct CharLiteralConstantSubstring {
 struct Designator {
   UNION_CLASS_BOILERPLATE(Designator);
   bool EndsInBareName() const;
-  CharBlock source;
-  std::variant<DataRef, Substring> u;
+  std::variant<ObjectName, DataRef, Substring> u;
 };
 
 // R902 variable -> designator | function-reference
@@ -1777,6 +1771,9 @@ struct Variable {
 // R904 logical-variable -> variable
 // Appears only as part of scalar-logical-variable.
 using ScalarLogicalVariable = Scalar<Logical<Variable>>;
+
+// R905 char-variable -> variable
+WRAPPER_CLASS(CharVariable, Variable);
 
 // R906 default-char-variable -> variable
 // Appears only as part of scalar-default-char-variable.
@@ -2498,14 +2495,9 @@ WRAPPER_CLASS(FileUnitNumber, ScalarIntExpr);
 
 // R1201 io-unit -> file-unit-number | * | internal-file-variable
 // R1203 internal-file-variable -> char-variable
-// R905 char-variable -> variable
-// When Variable appears as an IoUnit, it must be character of a default,
-// ASCII, or Unicode kind; this constraint is not automatically checked.
-// The parse is ambiguous and is repaired if necessary once the types of
-// symbols are known.
 struct IoUnit {
   UNION_CLASS_BOILERPLATE(IoUnit);
-  std::variant<Variable, FileUnitNumber, Star> u;
+  std::variant<FileUnitNumber, Star, CharVariable> u;
 };
 
 // R1206 file-name-expr -> scalar-default-char-expr
@@ -3110,7 +3102,6 @@ struct ActualArgSpec {
 // R1520 function-reference -> procedure-designator ( [actual-arg-spec-list] )
 struct Call {
   TUPLE_CLASS_BOILERPLATE(Call);
-  CharBlock source;
   std::tuple<ProcedureDesignator, std::list<ActualArgSpec>> t;
 };
 

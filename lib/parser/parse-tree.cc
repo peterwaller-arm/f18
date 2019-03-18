@@ -45,6 +45,7 @@ CommonStmt::CommonStmt(std::optional<Name> &&name,
 bool Designator::EndsInBareName() const {
   return std::visit(
       common::visitors{
+          [](const ObjectName &) { return true; },
           [](const DataRef &dr) {
             return std::holds_alternative<Name>(dr.u) ||
                 std::holds_alternative<common::Indirection<StructureComponent>>(
@@ -162,8 +163,7 @@ Statement<ActionStmt> StmtFunctionStmt::ConvertToAssignment() {
   auto &funcExpr{std::get<Scalar<Expr>>(t).thing};
   std::list<Expr> subscripts;
   for (Name &arg : funcArgs) {
-    subscripts.push_back(
-        Expr{common::Indirection{Designator{DataRef{Name{arg}}}}});
+    subscripts.push_back(Expr{common::Indirection{Designator{Name{arg}}}});
   }
   auto variable{Variable{common::Indirection{
       MakeArrayElementRef(funcName, std::move(subscripts))}}};

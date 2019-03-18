@@ -15,7 +15,7 @@
 module m
   implicit none
   real, parameter :: a = 8.0
-  !ERROR: Must have INTEGER type, but is REAL(4)
+  !ERROR: Must have INTEGER type
   integer :: aa = 2_a
   integer :: b = 8
   !ERROR: Must be a constant value

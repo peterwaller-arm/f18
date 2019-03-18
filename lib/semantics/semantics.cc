@@ -16,13 +16,12 @@
 #include "assignment.h"
 #include "canonicalize-do.h"
 #include "check-arithmeticif.h"
-#include "check-coarray.h"
 #include "check-computed-goto.h"
-#include "check-deallocate.h"
 #include "check-do-concurrent.h"
+#include "check-if-construct.h"
 #include "check-if-stmt.h"
 #include "check-nullify.h"
-#include "check-return.h"
+#include "check-stop.h"
 #include "expression.h"
 #include "mod-file.h"
 #include "resolve-labels.h"
@@ -78,11 +77,10 @@ private:
   SemanticsContext &context_;
 };
 
-using StatementSemanticsPass1 = ExprChecker;
-using StatementSemanticsPass2 =
-    SemanticsVisitor<ArithmeticIfStmtChecker, AssignmentChecker, CoarrayChecker,
-        ComputedGotoStmtChecker, DeallocateChecker, DoConcurrentChecker,
-        IfStmtChecker, NullifyChecker, ReturnStmtChecker>;
+using StatementSemanticsPass1 = SemanticsVisitor<ExprChecker>;
+using StatementSemanticsPass2 = SemanticsVisitor<ArithmeticIfStmtChecker,
+    AssignmentChecker, ComputedGotoStmtChecker, DoConcurrentChecker,
+    IfConstructChecker, IfStmtChecker, NullifyChecker, StopChecker>;
 
 SemanticsContext::SemanticsContext(
     const common::IntrinsicTypeDefaultKinds &defaultKinds,

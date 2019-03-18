@@ -1415,7 +1415,7 @@ TYPE_PARSER(construct<CommonBlockObject>(name, maybe(arraySpec)))
 //  maybe an [image-selector].
 //  If it's a substring, it ends with (substring-range).
 TYPE_CONTEXT_PARSER("designator"_en_US,
-    sourced(construct<Designator>(substring) || construct<Designator>(dataRef)))
+    construct<Designator>(substring) || construct<Designator>(dataRef))
 
 constexpr auto percentOrDot{"%"_tok ||
     // legacy VAX extension for RECORD field access
@@ -1440,6 +1440,9 @@ TYPE_CONTEXT_PARSER("variable"_en_US,
 // R904 logical-variable -> variable
 // Appears only as part of scalar-logical-variable.
 constexpr auto scalarLogicalVariable{scalar(logical(variable))};
+
+// R905 char-variable -> variable
+constexpr auto charVariable{construct<CharVariable>(variable)};
 
 // R906 default-char-variable -> variable
 // Appears only as part of scalar-default-char-variable.
@@ -1514,7 +1517,8 @@ constexpr auto teamValue{scalar(indirect(expr))};
 //        TEAM_NUMBER = scalar-int-expr
 TYPE_PARSER(construct<ImageSelectorSpec>(construct<ImageSelectorSpec::Stat>(
                 "STAT =" >> scalar(integer(indirect(variable))))) ||
-    construct<ImageSelectorSpec>(construct<TeamValue>("TEAM =" >> teamValue)) ||
+    construct<ImageSelectorSpec>(
+        construct<ImageSelectorSpec::Team>("TEAM =" >> teamValue)) ||
     construct<ImageSelectorSpec>(construct<ImageSelectorSpec::Team_Number>(
         "TEAM_NUMBER =" >> scalarIntExpr)))
 
@@ -2419,11 +2423,8 @@ TYPE_CONTEXT_PARSER("UNLOCK statement"_en_US,
 
 // R1201 io-unit -> file-unit-number | * | internal-file-variable
 // R1203 internal-file-variable -> char-variable
-// R905 char-variable -> variable
-// "char-variable" is attempted first since it's not type constrained but
-// syntactically ambiguous with "file-unit-number", which is constrained.
-TYPE_PARSER(construct<IoUnit>(variable / !"="_tok) ||
-    construct<IoUnit>(fileUnitNumber) || construct<IoUnit>(star))
+TYPE_PARSER(construct<IoUnit>(fileUnitNumber) || construct<IoUnit>(star) ||
+    construct<IoUnit>(charVariable / !"="_tok))
 
 // R1202 file-unit-number -> scalar-int-expr
 TYPE_PARSER(construct<FileUnitNumber>(scalarIntExpr / !"="_tok))
@@ -3283,15 +3284,14 @@ TYPE_PARSER(
 
 // R1520 function-reference -> procedure-designator ( [actual-arg-spec-list] )
 TYPE_CONTEXT_PARSER("function reference"_en_US,
-    construct<FunctionReference>(
-        sourced(construct<Call>(Parser<ProcedureDesignator>{},
-            parenthesized(optionalList(actualArgSpec))))) /
+    construct<FunctionReference>(construct<Call>(Parser<ProcedureDesignator>{},
+        parenthesized(optionalList(actualArgSpec)))) /
         !"["_tok)
 
 // R1521 call-stmt -> CALL procedure-designator [( [actual-arg-spec-list] )]
-TYPE_PARSER(construct<CallStmt>(
-    sourced(construct<Call>("CALL" >> Parser<ProcedureDesignator>{},
-        defaulted(parenthesized(optionalList(actualArgSpec)))))))
+TYPE_PARSER(
+    construct<CallStmt>(construct<Call>("CALL" >> Parser<ProcedureDesignator>{},
+        defaulted(parenthesized(optionalList(actualArgSpec))))))
 
 // R1522 procedure-designator ->
 //         procedure-name | proc-component-ref | data-ref % binding-name
