@@ -25,7 +25,6 @@ set(ERROR_TESTS
   implicit06.f90
   implicit07.f90
   implicit08.f90
-  int-literals.f90
   kinds02.f90
   resolve01.f90
   resolve02.f90
@@ -74,6 +73,7 @@ set(ERROR_TESTS
   resolve45.f90
   resolve46.f90
   resolve47.f90
+  resolve48.f90
   structconst01.f90
   structconst02.f90
   structconst03.f90

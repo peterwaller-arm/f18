@@ -21,7 +21,6 @@ add_library(FortranEvaluate
   decimal.cc
   expression.cc
   fold.cc
-  formatting.cc
   host.cc
   integer.cc
   intrinsics.cc

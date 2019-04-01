@@ -24,7 +24,6 @@
 
 #include "common.h"
 #include "constant.h"
-#include "formatting.h"
 #include "type.h"
 #include "variable.h"
 #include "../lib/common/Fortran.h"
@@ -195,9 +194,9 @@ public:
 
 protected:
   // Overridable functions for AsFortran()
-  static const char *Prefix() { return ""; }
-  static const char *Infix() { return ""; }
-  static const char *Suffix() { return ""; }
+  static std::ostream &Prefix(std::ostream &o) { return o << '('; }
+  static std::ostream &Infix(std::ostream &o) { return o << ','; }
+  static std::ostream &Suffix(std::ostream &o) { return o << ')'; }
 
 private:
   Container operand_;
@@ -240,7 +239,7 @@ template<typename A> struct Negate : public Operation<Negate<A>, A, A> {
   using Operand = A;
   using Base = Operation<Negate, A, A>;
   using Base::Base;
-  static const char *Prefix() { return "-"; }
+  static std::ostream &Prefix(std::ostream &o) { return o << "(-"; }
 };
 
 template<int KIND>
@@ -256,7 +255,9 @@ struct ComplexComponent
   ComplexComponent(bool isImaginary, Expr<Operand> &&x)
     : Base{std::move(x)}, isImaginaryPart{isImaginary} {}
 
-  const char *Suffix() const { return isImaginaryPart ? "%IM)" : "%RE)"; }
+  std::ostream &Suffix(std::ostream &o) const {
+    return o << (isImaginaryPart ? "%IM)" : "%RE)");
+  }
 
   bool isImaginaryPart{true};
 };
@@ -268,7 +269,7 @@ struct Not : public Operation<Not<KIND>, Type<TypeCategory::Logical, KIND>,
   using Operand = Result;
   using Base = Operation<Not, Result, Operand>;
   using Base::Base;
-  static const char *Prefix() { return ".NOT."; }
+  static std::ostream &Prefix(std::ostream &o) { return o << "(.NOT."; }
 };
 
 // Character lengths are determined by context in Fortran and do not
@@ -284,7 +285,7 @@ struct SetLength
   using LengthOperand = SubscriptInteger;
   using Base = Operation<SetLength, Result, CharacterOperand, LengthOperand>;
   using Base::Base;
-  static const char *Prefix() { return "%SET_LENGTH("; }
+  static std::ostream &Prefix(std::ostream &o) { return o << "%SET_LENGTH("; }
 };
 
 // Binary operations
@@ -294,7 +295,7 @@ template<typename A> struct Add : public Operation<Add<A>, A, A, A> {
   using Operand = A;
   using Base = Operation<Add, A, A, A>;
   using Base::Base;
-  static const char *Infix() { return "+"; }
+  static std::ostream &Infix(std::ostream &o) { return o << '+'; }
 };
 
 template<typename A> struct Subtract : public Operation<Subtract<A>, A, A, A> {
@@ -302,7 +303,7 @@ template<typename A> struct Subtract : public Operation<Subtract<A>, A, A, A> {
   using Operand = A;
   using Base = Operation<Subtract, A, A, A>;
   using Base::Base;
-  static const char *Infix() { return "-"; }
+  static std::ostream &Infix(std::ostream &o) { return o << '-'; }
 };
 
 template<typename A> struct Multiply : public Operation<Multiply<A>, A, A, A> {
@@ -310,7 +311,7 @@ template<typename A> struct Multiply : public Operation<Multiply<A>, A, A, A> {
   using Operand = A;
   using Base = Operation<Multiply, A, A, A>;
   using Base::Base;
-  static const char *Infix() { return "*"; }
+  static std::ostream &Infix(std::ostream &o) { return o << '*'; }
 };
 
 template<typename A> struct Divide : public Operation<Divide<A>, A, A, A> {
@@ -318,7 +319,7 @@ template<typename A> struct Divide : public Operation<Divide<A>, A, A, A> {
   using Operand = A;
   using Base = Operation<Divide, A, A, A>;
   using Base::Base;
-  static const char *Infix() { return "/"; }
+  static std::ostream &Infix(std::ostream &o) { return o << '/'; }
 };
 
 template<typename A> struct Power : public Operation<Power<A>, A, A, A> {
@@ -326,7 +327,7 @@ template<typename A> struct Power : public Operation<Power<A>, A, A, A> {
   using Operand = A;
   using Base = Operation<Power, A, A, A>;
   using Base::Base;
-  static const char *Infix() { return "**"; }
+  static std::ostream &Infix(std::ostream &o) { return o << "**"; }
 };
 
 template<typename A>
@@ -336,7 +337,7 @@ struct RealToIntPower : public Operation<RealToIntPower<A>, A, A, SomeInteger> {
   using BaseOperand = A;
   using ExponentOperand = SomeInteger;
   using Base::Base;
-  static const char *Infix() { return "**"; }
+  static std::ostream &Infix(std::ostream &o) { return o << "**"; }
 };
 
 template<typename A> struct Extremum : public Operation<Extremum<A>, A, A, A> {
@@ -351,8 +352,8 @@ template<typename A> struct Extremum : public Operation<Extremum<A>, A, A, A> {
       Expr<Operand> &&x, Expr<Operand> &&y, Ordering ord = Ordering::Greater)
     : Base{std::move(x), std::move(y)}, ordering{ord} {}
 
-  const char *Prefix() const {
-    return ordering == Ordering::Less ? "MIN(" : "MAX(";
+  std::ostream &Prefix(std::ostream &o) const {
+    return o << (ordering == Ordering::Less ? "MIN(" : "MAX(");
   }
 
   Ordering ordering{Ordering::Greater};
@@ -378,7 +379,7 @@ struct Concat
   using Operand = Result;
   using Base = Operation<Concat, Result, Operand, Operand>;
   using Base::Base;
-  static const char *Infix() { return "//"; }
+  static std::ostream &Infix(std::ostream &o) { return o << "//"; }
 };
 
 ENUM_CLASS(LogicalOperator, And, Or, Eqv, Neqv)
@@ -397,7 +398,7 @@ struct LogicalOperation
   LogicalOperation(LogicalOperator opr, Expr<Operand> &&x, Expr<Operand> &&y)
     : Base{std::move(x), std::move(y)}, logicalOperator{opr} {}
 
-  const char *Infix() const;
+  std::ostream &Infix(std::ostream &) const;
 
   LogicalOperator logicalOperator;
 };
@@ -587,9 +588,9 @@ public:
   common::CombineVariants<Operations, Others> u;
 };
 
-FOR_EACH_INTEGER_KIND(extern template class Expr, )
-FOR_EACH_REAL_KIND(extern template class Expr, )
-FOR_EACH_COMPLEX_KIND(extern template class Expr, )
+FOR_EACH_INTEGER_KIND(extern template class Expr)
+FOR_EACH_REAL_KIND(extern template class Expr)
+FOR_EACH_COMPLEX_KIND(extern template class Expr)
 
 template<int KIND>
 class Expr<Type<TypeCategory::Character, KIND>>
@@ -608,7 +609,7 @@ public:
       u;
 };
 
-FOR_EACH_CHARACTER_KIND(extern template class Expr, )
+FOR_EACH_CHARACTER_KIND(extern template class Expr)
 
 // The Relational class template is a helper for constructing logical
 // expressions with polymorphism over the cross product of the possible
@@ -633,7 +634,7 @@ struct Relational : public Operation<Relational<A>, LogicalResult, A, A> {
   Relational(RelationalOperator r, Expr<Operand> &&a, Expr<Operand> &&b)
     : Base{std::move(a), std::move(b)}, opr{r} {}
 
-  const char *Infix() const;
+  std::ostream &Infix(std::ostream &) const;
 
   RelationalOperator opr;
 };
@@ -654,9 +655,9 @@ public:
   common::MapTemplate<Relational, DirectlyComparableTypes> u;
 };
 
-FOR_EACH_INTEGER_KIND(extern template struct Relational, )
-FOR_EACH_REAL_KIND(extern template struct Relational, )
-FOR_EACH_CHARACTER_KIND(extern template struct Relational, )
+FOR_EACH_INTEGER_KIND(extern template struct Relational)
+FOR_EACH_REAL_KIND(extern template struct Relational)
+FOR_EACH_CHARACTER_KIND(extern template struct Relational)
 extern template struct Relational<SomeType>;
 
 // Logical expressions of a kind bigger than LogicalResult
@@ -685,7 +686,7 @@ public:
       u;
 };
 
-FOR_EACH_LOGICAL_KIND(extern template class Expr, )
+FOR_EACH_LOGICAL_KIND(extern template class Expr)
 
 // StructureConstructor pairs a StructureConstructorValues instance
 // (a map associating symbols with expressions) with a derived type
@@ -822,21 +823,9 @@ struct GenericExprWrapper {
 std::ostream &DerivedTypeSpecAsFortran(
     std::ostream &, const semantics::DerivedTypeSpec &);
 
-FOR_EACH_CATEGORY_TYPE(extern template class Expr, )
-FOR_EACH_TYPE_AND_KIND(extern template class ExpressionBase, )
-FOR_EACH_INTRINSIC_KIND(extern template class ArrayConstructorValues, )
-FOR_EACH_INTRINSIC_KIND(extern template class ArrayConstructor, )
-
-// Template instantiations to resolve these "extern template" declarations.
-#define INSTANTIATE_EXPRESSION_TEMPLATES \
-  FOR_EACH_INTRINSIC_KIND(template class Expr, ) \
-  FOR_EACH_CATEGORY_TYPE(template class Expr, ) \
-  FOR_EACH_INTEGER_KIND(template struct Relational, ) \
-  FOR_EACH_REAL_KIND(template struct Relational, ) \
-  FOR_EACH_CHARACTER_KIND(template struct Relational, ) \
-  template struct Relational<SomeType>; \
-  FOR_EACH_TYPE_AND_KIND(template class ExpressionBase, ) \
-  FOR_EACH_INTRINSIC_KIND(template class ArrayConstructorValues, ) \
-  FOR_EACH_INTRINSIC_KIND(template class ArrayConstructor, )
+FOR_EACH_CATEGORY_TYPE(extern template class Expr)
+FOR_EACH_TYPE_AND_KIND(extern template class ExpressionBase)
+FOR_EACH_INTRINSIC_KIND(extern template class ArrayConstructorValues)
+FOR_EACH_INTRINSIC_KIND(extern template class ArrayConstructor)
 }
 #endif  // FORTRAN_EVALUATE_EXPRESSION_H_

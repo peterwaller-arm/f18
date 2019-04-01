@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -70,8 +70,7 @@ struct DerivedTypeDataEditDesc {
 
 // R1313 control-edit-desc ->
 //         position-edit-desc | [r] / | : | sign-edit-desc | k P |
-//         blank-interp-edit-desc | round-edit-desc | decimal-edit-desc |
-//         @ \ | $
+//         blank-interp-edit-desc | round-edit-desc | decimal-edit-desc
 // R1315 position-edit-desc -> T n | TL n | TR n | n X
 // R1316 n -> digit-string
 // R1317 sign-edit-desc -> SS | SP | S
@@ -99,9 +98,7 @@ struct ControlEditDesc {
     RC,
     RP,
     DC,
-    DP,
-    Dollar,  // extension: inhibit newline on output
-    Backslash,  // ditto, but only on terminals
+    DP
   };
   ControlEditDesc() = delete;
   ControlEditDesc(ControlEditDesc &&) = default;

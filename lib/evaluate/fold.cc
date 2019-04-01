@@ -394,6 +394,7 @@ Expr<Type<TypeCategory::Integer, KIND>> FoldOperation(FoldingContext &context,
               return Fold(context, ConvertToType<T>(std::move(x)));
             }
             common::die("int() argument type not valid");
+            return Expr<T>{std::move(funcRef)};  // unreachable
           },
           std::move(args[0].value().value().u));
     } else if (name == "kind") {
@@ -475,7 +476,7 @@ Expr<Type<TypeCategory::Integer, KIND>> FoldOperation(FoldingContext &context,
           context, std::move(funcRef), &Scalar<T>::MERGE_BITS);
     }
     // TODO:
-    // ceiling, count, cshift, dot_product, eoshift,
+    // ceiling, command_argument_count, count, cshift, dot_product, eoshift,
     // findloc, floor, iachar, iall, iany, iparity, ibits, ichar, image_status,
     // index, ishftc, lbound, len_trim, matmul, max, maxloc, maxval, merge, min,
     // minloc, minval, mod, modulo, nint, not, pack, product, reduce, reshape,
@@ -620,6 +621,7 @@ Expr<Type<TypeCategory::Real, KIND>> FoldOperation(FoldingContext &context,
               return Fold(context, ConvertToType<T>(std::move(x)));
             }
             common::die("real() argument type not valid");
+            return Expr<T>{std::move(funcRef)};  // unreachable
           },
           std::move(args[0].value().value().u));
     }
@@ -1355,7 +1357,7 @@ Expr<T> ExpressionBase<T>::Rewrite(FoldingContext &context, Expr<T> &&expr) {
       std::move(expr.u));
 }
 
-FOR_EACH_TYPE_AND_KIND(template class ExpressionBase, )
+FOR_EACH_TYPE_AND_KIND(template class ExpressionBase)
 
 // Constant expression predicate IsConstantExpr().
 // This code determines whether an expression is a "constant expression"

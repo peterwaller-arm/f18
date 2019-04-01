@@ -17,7 +17,6 @@
 
 #include "common.h"
 #include "constant.h"
-#include "formatting.h"
 #include "type.h"
 #include "../common/indirection.h"
 #include "../parser/char-block.h"
@@ -135,6 +134,6 @@ public:
   std::optional<Constant<Result>> Fold(FoldingContext &);  // for intrinsics
 };
 
-FOR_EACH_SPECIFIC_TYPE(extern template class FunctionRef, )
+FOR_EACH_SPECIFIC_TYPE(extern template class FunctionRef)
 }
 #endif  // FORTRAN_EVALUATE_CALL_H_

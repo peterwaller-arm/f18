@@ -73,8 +73,9 @@ template<typename TR, typename... ArgInfo> struct CallableHostWrapper {
       hostFPE.CheckAndRestoreFloatingPointEnvironment(context);
       return host::CastHostToFortran<TR>(res);
     } else {
-      common::die("Internal error: Host does not supports this function type."
+      common::die("Internal error: Host does not supports this function types."
                   "This should not have been called for folding");
+      return Scalar<TR>{};  // unreachable
     }
   }
   static constexpr inline auto MakeScalarCallable() { return &scalarCallable; }

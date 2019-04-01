@@ -399,38 +399,17 @@ int ExpressionAnalyzer::AnalyzeKindParam(
 }
 
 // Common handling of parser::IntLiteralConstant and SignedIntLiteralConstant
-struct IntTypeVisitor {
-  using Result = MaybeExpr;
-  using Types = IntegerTypes;
-  template<typename T> Result Test() {
-    if (T::kind == kind) {
-      const char *p{digits.begin()};
-      auto value{T::Scalar::Read(p, 10, true)};
-      if (!value.overflow) {
-        return Expr<SomeType>{
-            Expr<SomeInteger>{Expr<T>{Constant<T>{std::move(value.value)}}}};
-      }
-    }
-    return std::nullopt;
-  }
-  parser::CharBlock digits;
-  int kind;
-};
-
 template<typename PARSED>
 MaybeExpr ExpressionAnalyzer::IntLiteralConstant(const PARSED &x) {
   int kind{AnalyzeKindParam(std::get<std::optional<parser::KindParam>>(x.t),
       GetDefaultKind(TypeCategory::Integer))};
-  if (CheckIntrinsicKind(TypeCategory::Integer, kind)) {
-    auto digits{std::get<parser::CharBlock>(x.t)};
-    if (MaybeExpr result{common::SearchTypes(IntTypeVisitor{digits, kind})}) {
-      return result;
-    } else {
-      Say(digits, "Integer literal too large for INTEGER(KIND=%d)"_err_en_US,
-          kind);
-    }
+  auto value{std::get<0>(x.t)};  // std::(u)int64_t
+  if (!CheckIntrinsicKind(TypeCategory::Integer, kind)) {
+    return std::nullopt;
   }
-  return std::nullopt;
+  return common::SearchTypes(
+      TypeKindVisitor<TypeCategory::Integer, Constant, std::int64_t>{
+          kind, static_cast<std::int64_t>(value)});
 }
 
 MaybeExpr ExpressionAnalyzer::Analyze(const parser::IntLiteralConstant &x) {
@@ -608,8 +587,7 @@ MaybeExpr ExpressionAnalyzer::Analyze(const parser::BOZLiteralConstant &x) {
   default: CRASH_NO_CASE;
   }
   CHECK(*p == '"');
-  ++p;
-  auto value{BOZLiteralConstant::Read(p, base, false /*unsigned*/)};
+  auto value{BOZLiteralConstant::ReadUnsigned(++p, base)};
   if (*p != '"') {
     Say("invalid digit ('%c') in BOZ literal %s"_err_en_US, *p, x.v.data());
     return std::nullopt;
@@ -1951,7 +1929,7 @@ void ExprChecker::Enter(const parser::Expr &expr) {
   if (!expr.typedExpr) {
     if (MaybeExpr checked{AnalyzeExpr(context_, expr)}) {
 #if PMKDEBUG
-//        std::cout << "checked expression: " << *checked << '\n';
+//        checked->AsFortran(std::cout << "checked expression: ") << '\n';
 #endif
       expr.typedExpr.reset(
           new evaluate::GenericExprWrapper{std::move(*checked)});
@@ -1967,7 +1945,7 @@ void ExprChecker::Enter(const parser::Expr &expr) {
 void ExprChecker::Enter(const parser::Variable &var) {
 #if PMKDEBUG
   if (MaybeExpr checked{AnalyzeExpr(context_, var)}) {
-//    std::cout << "checked variable: " << *checked << '\n';
+//    checked->AsFortran(std::cout << "checked variable: ") << '\n';
 #else
   if (AnalyzeExpr(context_, var)) {
 #endif
