@@ -12,10 +12,20 @@
 ! See the License for the specific language governing permissions and
 ! limitations under the License.
 
-! Check subroutine with alt return
+! Test SELECT TYPE errors: C1157
 
-       SUBROUTINE TEST (N, *, *)
-       IF ( N .EQ. 0 ) RETURN
-       IF ( N .EQ. 1 ) RETURN 1
-       RETURN 2
-       END
+subroutine s1()
+  type :: t
+  end type
+  procedure(f) :: ff
+  !ERROR: Selector is not a named variable: 'associate-name =>' is required
+  select type(ff())
+    class is(t)
+    class default
+  end select
+contains
+  function f()
+    class(t), pointer :: f
+    f => null()
+  end function
+end subroutine

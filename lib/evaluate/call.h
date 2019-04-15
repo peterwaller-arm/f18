@@ -31,13 +31,6 @@ class Symbol;
 }
 
 namespace Fortran::evaluate {
-class Component;
-}
-
-extern template class Fortran::common::Indirection<Fortran::evaluate::Component,
-    true>;
-
-namespace Fortran::evaluate {
 
 class ActualArgument {
 public:
@@ -96,7 +89,6 @@ struct ProcedureDesignator {
   EVALUATE_UNION_CLASS_BOILERPLATE(ProcedureDesignator)
   explicit ProcedureDesignator(SpecificIntrinsic &&i) : u{std::move(i)} {}
   explicit ProcedureDesignator(const semantics::Symbol &n) : u{&n} {}
-  explicit ProcedureDesignator(Component &&);
   std::optional<DynamicType> GetType() const;
   int Rank() const;
   bool IsElemental() const;
@@ -105,9 +97,7 @@ struct ProcedureDesignator {
   std::ostream &AsFortran(std::ostream &) const;
 
   // TODO: When calling X%F, pass X as PASS argument unless NOPASS
-  std::variant<SpecificIntrinsic, const semantics::Symbol *,
-      common::CopyableIndirection<Component>>
-      u;
+  std::variant<SpecificIntrinsic, const semantics::Symbol *> u;
 };
 
 class ProcedureRef {

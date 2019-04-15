@@ -17,12 +17,13 @@ add_library(FortranSemantics
   attr.cc
   canonicalize-do.cc
   check-arithmeticif.cc
+  check-coarray.cc
   check-computed-goto.cc
   check-deallocate.cc
   check-do-concurrent.cc
+  check-if-construct.cc
   check-if-stmt.cc
   check-nullify.cc
-  check-return.cc
   expression.cc
   mod-file.cc
   resolve-labels.cc
