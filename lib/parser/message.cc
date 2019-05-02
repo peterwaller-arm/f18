@@ -33,69 +33,6 @@ std::ostream &operator<<(std::ostream &o, const MessageFixedText &t) {
   return o;
 }
 
-static bool NeedsSpecialFormatting(const char *p) {
-  bool result{false};
-  bool tooLate{false};
-  while (*p != '\0') {
-    if (*p++ == '%') {
-      if (*p == 'S' || *p == 'B') {
-        CHECK(!tooLate);
-        result = true;
-      } else if (*p != '%' && *p != 's' && *p != 'd' &&
-          !((*p == 'z' || *p == 'j') && (p[1] == 'd' || p[1] == 'u'))) {
-        tooLate = true;
-      }
-    }
-  }
-  return result;
-}
-
-// Some standard formatting codes (e.g., %d) are handled here
-// rather than in vsnprintf() because once we have to call vsnprintf(),
-// we're no longer able to process our special codes like %S and %B,
-// and it's possible that a format might use a common standard formatting
-// code before one of our special codes.
-static std::string SpecialFormatting(const char *p, va_list &ap) {
-  std::string result;
-  while (*p != '\0') {
-    if (*p != '%') {
-      result += *p++;
-    } else {
-      ++p;
-      switch (*p++) {
-      case '%': result += '%'; break;
-      case 's': result += va_arg(ap, const char *); break;
-      case 'd': result += std::to_string(va_arg(ap, int)); break;
-      case 'S': result += va_arg(ap, std::string); break;
-      case 'B': result += va_arg(ap, CharBlock).ToString(); break;
-      default:
-        if (p[-1] == 'z' && (*p == 'u' || *p == 'd')) {
-          result += std::to_string(va_arg(ap, std::size_t));
-          ++p;
-          break;
-        }
-        if (p[-1] == 'j') {
-          if (*p == 'd') {
-            result += std::to_string(va_arg(ap, std::intmax_t));
-            ++p;
-            break;
-          }
-          if (*p == 'u') {
-            result += std::to_string(va_arg(ap, std::uintmax_t));
-            ++p;
-            break;
-          }
-        }
-        char buffer[256];
-        vsnprintf(buffer, sizeof buffer, p - 2, ap);
-        result += buffer;
-        return result;
-      }
-    }
-  }
-  return result;
-}
-
 MessageFormattedText::MessageFormattedText(MessageFixedText text, ...)
   : isFatal_{text.isFatal()} {
   const char *p{text.text().begin()};
@@ -103,25 +40,22 @@ MessageFormattedText::MessageFormattedText(MessageFixedText text, ...)
   if (*text.text().end() != '\0') {
     // not NUL-terminated
     asString = text.text().NULTerminatedToString();
-    p = asString.c_str();
+    p = asString.data();
   }
+  char buffer[256];
   va_list ap;
   va_start(ap, text);
-  if (NeedsSpecialFormatting(p)) {
-    string_ = SpecialFormatting(p, ap);
-  } else {
-    char buffer[256];
-    vsnprintf(buffer, sizeof buffer, p, ap);
-    string_ = buffer;
-  }
+  vsnprintf(buffer, sizeof buffer, p, ap);
   va_end(ap);
+  string_ = buffer;
 }
 
 std::string MessageExpectedText::ToString() const {
   return std::visit(
       common::visitors{
           [](const CharBlock &cb) {
-            return MessageFormattedText("expected '%B'"_err_en_US, cb)
+            return MessageFormattedText(
+                "expected '%s'"_err_en_US, cb.NULTerminatedToString().data())
                 .MoveString();
           },
           [](const SetOfChars &set) {
@@ -134,21 +68,22 @@ std::string MessageExpectedText::ToString() const {
                 std::string s{expect.ToString()};
                 if (s.size() == 1) {
                   return MessageFormattedText(
-                      "expected end of line or '%S'"_err_en_US, s)
+                      "expected end of line or '%s'"_err_en_US, s.data())
                       .MoveString();
                 } else {
                   return MessageFormattedText(
-                      "expected end of line or one of '%S'"_err_en_US, s)
+                      "expected end of line or one of '%s'"_err_en_US, s.data())
                       .MoveString();
                 }
               }
             }
             std::string s{expect.ToString()};
             if (s.size() != 1) {
-              return MessageFormattedText("expected one of '%S'"_err_en_US, s)
+              return MessageFormattedText(
+                  "expected one of '%s'"_err_en_US, s.data())
                   .MoveString();
             } else {
-              return MessageFormattedText("expected '%S'"_err_en_US, s)
+              return MessageFormattedText("expected '%s'"_err_en_US, s.data())
                   .MoveString();
             }
           },

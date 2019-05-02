@@ -77,16 +77,17 @@ template<typename A> bool IsVariable(const Expr<A> &expr) {
 }
 
 // Predicate: true when an expression is assumed-rank
-bool IsAssumedRank(const semantics::Symbol &);
-bool IsAssumedRank(const ActualArgument &);
 template<typename A> bool IsAssumedRank(const A &) { return false; }
 template<typename A> bool IsAssumedRank(const Designator<A> &designator) {
-  if (const auto *symbol{
+  if (const auto *symbolPtr{
           std::get_if<const semantics::Symbol *>(&designator.u)}) {
-    return IsAssumedRank(*symbol);
-  } else {
-    return false;
+    if (const auto *details{
+            (*symbolPtr)
+                ->template detailsIf<semantics::ObjectEntityDetails>()}) {
+      return details->IsAssumedRank();
+    }
   }
+  return false;
 }
 template<typename A> bool IsAssumedRank(const Expr<A> &expr) {
   return std::visit([](const auto &x) { return IsAssumedRank(x); }, expr.u);
@@ -111,11 +112,7 @@ Expr<SomeKind<CATEGORY>> AsCategoryExpr(Expr<SomeKind<CATEGORY>> &&x) {
 
 template<typename A>
 common::IfNoLvalue<Expr<SomeType>, A> AsGenericExpr(A &&x) {
-  if constexpr (common::HasMember<A, TypelessExpression>) {
-    return Expr<SomeType>{std::move(x)};
-  } else {
-    return Expr<SomeType>{AsCategoryExpr(std::move(x))};
-  }
+  return Expr<SomeType>{AsCategoryExpr(std::move(x))};
 }
 
 template<typename A>
@@ -126,6 +123,14 @@ common::IfNoLvalue<Expr<SomeKind<ResultType<A>::category>>, A> AsCategoryExpr(
 
 inline Expr<SomeType> AsGenericExpr(Expr<SomeType> &&x) { return std::move(x); }
 
+inline Expr<SomeType> AsGenericExpr(BOZLiteralConstant &&x) {
+  return Expr<SomeType>{std::move(x)};
+}
+
+inline Expr<SomeType> AsGenericExpr(NullPointer &&x) {
+  return Expr<SomeType>{std::move(x)};
+}
+
 Expr<SomeReal> GetComplexPart(
     const Expr<SomeComplex> &, bool isImaginary = false);
 
@@ -135,14 +140,6 @@ Expr<SomeComplex> MakeComplex(Expr<Type<TypeCategory::Real, KIND>> &&re,
   return AsCategoryExpr(ComplexConstructor<KIND>{std::move(re), std::move(im)});
 }
 
-template<typename A> constexpr bool IsNumericCategoryExpr() {
-  if constexpr (common::HasMember<A, TypelessExpression>) {
-    return false;
-  } else {
-    return common::HasMember<ResultType<A>, NumericCategoryTypes>;
-  }
-}
-
 // Specializing extractor.  If an Expr wraps some type of object, perhaps
 // in several layers, return a pointer to it; otherwise null.
 template<typename A, typename B>
@@ -150,7 +147,8 @@ auto UnwrapExpr(B &x) -> common::Constify<A, B> * {
   using Ty = std::decay_t<B>;
   if constexpr (std::is_same_v<A, Ty>) {
     return &x;
-  } else if constexpr (common::HasMember<Ty, TypelessExpression>) {
+  } else if constexpr (std::is_same_v<Ty, BOZLiteralConstant> ||
+      std::is_same_v<Ty, NullPointer>) {
     return nullptr;
   } else if constexpr (std::is_same_v<Ty, Expr<ResultType<A>>>) {
     return common::Unwrap<A>(x.u);
@@ -228,8 +226,7 @@ template<typename TO> Expr<TO> ConvertToType(BOZLiteralConstant &&x) {
   } else {
     static_assert(TO::category == TypeCategory::Real);
     using Word = typename Value::Word;
-    return Expr<TO>{
-        Constant<TO>{Value{Word::ConvertUnsigned(std::move(x)).value}}};
+    return Expr<TO>{Constant<TO>{Word::ConvertUnsigned(std::move(x)).value}};
   }
 }
 
@@ -546,14 +543,6 @@ const semantics::Symbol *GetLastSymbol(const Designator<T> &x) {
   return x.GetLastSymbol();
 }
 
-inline const semantics::Symbol *GetLastSymbol(const ProcedureDesignator &x) {
-  return x.GetSymbol();
-}
-
-inline const semantics::Symbol *GetLastSymbol(const ProcedureRef &x) {
-  return GetLastSymbol(x.proc());
-}
-
 template<typename T> const semantics::Symbol *GetLastSymbol(const Expr<T> &x) {
   return std::visit([](const auto &y) { return GetLastSymbol(y); }, x.u);
 }
@@ -566,17 +555,9 @@ template<typename A> semantics::Attrs GetAttrs(const A &x) {
   }
 }
 
-template<typename A> bool IsAllocatableOrPointer(const A &x) {
+template<typename A> bool IsPointerOrAllocatable(const A &x) {
   return GetAttrs(x).HasAny(
       semantics::Attrs{semantics::Attr::POINTER, semantics::Attr::ALLOCATABLE});
-}
-
-template<typename A> bool IsProcedurePointer(const A &) { return false; }
-inline bool IsProcedurePointer(const ProcedureDesignator &) { return true; }
-inline bool IsProcedurePointer(const ProcedureRef &) { return true; }
-inline bool IsProcedurePointer(const Expr<SomeType> &expr) {
-  return std::visit(
-      [](const auto &x) { return IsProcedurePointer(x); }, expr.u);
 }
 }
 #endif  // FORTRAN_EVALUATE_TOOLS_H_

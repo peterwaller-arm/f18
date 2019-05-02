@@ -25,10 +25,6 @@
 #include <optional>
 #include <variant>
 
-namespace Fortran::parser {
-class ContextualMessages;
-}
-
 namespace Fortran::evaluate {
 
 class FoldingContext;
@@ -62,9 +58,8 @@ bool ContainsAnyImpliedDoIndex(const ExtentExpr &);
 
 // Compilation-time shape conformance checking, when corresponding extents
 // are known.
-bool CheckConformance(parser::ContextualMessages &, const Shape &,
-    const Shape &, const char * = "left operand",
-    const char * = "right operand");
+void CheckConformance(
+    parser::ContextualMessages &, const Shape &, const Shape &);
 
 // The implementation of GetShape() is wrapped in a helper class
 // so that the member functions may mutually recurse without prototypes.
@@ -86,7 +81,6 @@ public:
   std::optional<Shape> GetShape(const Substring &);
   std::optional<Shape> GetShape(const ComplexPart &);
   std::optional<Shape> GetShape(const ActualArgument &);
-  std::optional<Shape> GetShape(const ProcedureDesignator &);
   std::optional<Shape> GetShape(const ProcedureRef &);
   std::optional<Shape> GetShape(const ImpliedDoIndex &);
   std::optional<Shape> GetShape(const Relational<SomeType> &);
@@ -150,6 +144,8 @@ public:
   }
 
 private:
+  MaybeExtent GetLowerBound(const Symbol &, const Component *, int dimension);
+
   template<typename T>
   MaybeExtent GetExtent(const ArrayConstructorValue<T> &value) {
     return std::visit(
@@ -191,8 +187,6 @@ private:
     return result;
   }
 
-  // The dimension here is zero-based, unlike DIM= intrinsic arguments.
-  MaybeExtent GetLowerBound(const Symbol &, const Component *, int dimension);
   MaybeExtent GetExtent(const Symbol &, const Component *, int dimension);
   MaybeExtent GetExtent(
       const Subscript &, const Symbol &, const Component *, int dimension);

@@ -42,9 +42,6 @@ struct SpecificCall {
 
 struct UnrestrictedSpecificIntrinsicFunctionInterface
   : public characteristics::Procedure {
-  UnrestrictedSpecificIntrinsicFunctionInterface(
-      characteristics::Procedure &&p, std::string n)
-    : characteristics::Procedure{std::move(p)}, genericName{n} {}
   std::string genericName;
   // N.B. If there are multiple arguments, they all have the same type.
   // All argument and result types are intrinsic types with default kinds.
@@ -65,8 +62,7 @@ public:
 
   // Probe the intrinsics for a match against a specific call.
   // On success, the actual arguments are transferred to the result
-  // in dummy argument order; on failure, the actual arguments remain
-  // untouched.
+  // in dummy argument order.
   std::optional<SpecificCall> Probe(
       const CallCharacteristics &, ActualArguments &, FoldingContext &) const;
 

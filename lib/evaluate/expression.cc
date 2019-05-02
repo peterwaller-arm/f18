@@ -73,11 +73,13 @@ std::optional<DynamicType> ExpressionBase<A>::GetType() const {
     return Result::GetType();
   } else {
     return std::visit(
-        [&](const auto &x) -> std::optional<DynamicType> {
-          if constexpr (!common::HasMember<decltype(x), TypelessExpression>) {
+        [](const auto &x) -> std::optional<DynamicType> {
+          using Ty = std::decay_t<decltype(x)>;
+          if constexpr (!std::is_same_v<Ty, BOZLiteralConstant> &&
+              !std::is_same_v<Ty, NullPointer>) {
             return x.GetType();
           }
-          return std::nullopt;
+          return std::nullopt;  // typeless really means "no type"
         },
         derived().u);
   }
@@ -86,7 +88,8 @@ std::optional<DynamicType> ExpressionBase<A>::GetType() const {
 template<typename A> int ExpressionBase<A>::Rank() const {
   return std::visit(
       [](const auto &x) {
-        if constexpr (common::HasMember<decltype(x), TypelessExpression>) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(x)>,
+                          BOZLiteralConstant>) {
           return 0;
         } else {
           return x.Rank();

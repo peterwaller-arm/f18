@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "tools.h"
-#include "traversal.h"
 #include "../common/idioms.h"
 #include "../parser/message.h"
 #include <algorithm>
@@ -352,14 +351,6 @@ std::optional<Expr<SomeType>> Negation(
             messages.Say("NULL() cannot be negated"_err_en_US);
             return NoExpr();
           },
-          [&](ProcedureDesignator &&) {
-            messages.Say("Subroutine cannot be negated"_err_en_US);
-            return NoExpr();
-          },
-          [&](ProcedureRef &&) {
-            messages.Say("Pointer to subroutine cannot be negated"_err_en_US);
-            return NoExpr();
-          },
           [&](Expr<SomeInteger> &&x) { return Package(-std::move(x)); },
           [&](Expr<SomeReal> &&x) { return Package(-std::move(x)); },
           [&](Expr<SomeComplex> &&x) { return Package(-std::move(x)); },
@@ -514,7 +505,8 @@ std::optional<Expr<SomeType>> ConvertToNumeric(int kind, Expr<SomeType> &&x) {
   return std::visit(
       [=](auto &&cx) -> std::optional<Expr<SomeType>> {
         using cxType = std::decay_t<decltype(cx)>;
-        if constexpr (!common::HasMember<cxType, TypelessExpression>) {
+        if constexpr (!std::is_same_v<cxType, BOZLiteralConstant> &&
+            !std::is_same_v<cxType, NullPointer>) {
           if constexpr (IsNumericTypeCategory(ResultType<cxType>::category)) {
             return std::make_optional(
                 Expr<SomeType>{ConvertToKind<TO>(kind, std::move(cx))});
@@ -581,7 +573,7 @@ std::optional<Expr<SomeType>> ConvertToType(
       return std::nullopt;
     }
   }
-  if (auto symType{DynamicType::From(symbol)}) {
+  if (auto symType{GetSymbolType(symbol)}) {
     return ConvertToType(*symType, std::move(x));
   }
   return std::nullopt;
@@ -593,24 +585,6 @@ std::optional<Expr<SomeType>> ConvertToType(
     return ConvertToType(type, std::move(*x));
   } else {
     return std::nullopt;
-  }
-}
-
-bool IsAssumedRank(const semantics::Symbol &symbol) {
-  if (const auto *details{symbol.detailsIf<semantics::ObjectEntityDetails>()}) {
-    return details->IsAssumedRank();
-  } else {
-    return false;
-  }
-}
-
-bool IsAssumedRank(const ActualArgument &arg) {
-  if (const auto *expr{arg.GetExpr()}) {
-    return IsAssumedRank(*expr);
-  } else {
-    const semantics::Symbol *assumedTypeDummy{arg.GetAssumedTypeDummy()};
-    CHECK(assumedTypeDummy != nullptr);
-    return IsAssumedRank(*assumedTypeDummy);
   }
 }
 }

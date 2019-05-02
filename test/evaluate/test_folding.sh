@@ -66,11 +66,7 @@ src2=$temp/all_parameters.log
 src3=$temp/tested_parameters.log
 src4=$temp/failures.log
 
-if $CMD $src > $src1  # compile, dumping symbols
-then :
-else echo FAIL compilation
-     exit 1
-fi
+$CMD $src > $src1  # compile, dumping symbols
 
 # Get all PARAMETER declarations
 sed -e '/, PARAMETER/!d' -e 's/, PARAMETER.*init:/ /' \
