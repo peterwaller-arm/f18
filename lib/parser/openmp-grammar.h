@@ -1,4 +1,4 @@
-// Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2018-2019, NVIDIA CORPORATION.  All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -158,7 +158,8 @@ TYPE_PARSER(construct<OmpObject>(pure(OmpObject::Kind::Object), designator) ||
     construct<OmpObject>(
         "/" >> pure(OmpObject::Kind::Common), designator / "/"))
 
-TYPE_PARSER("DEFAULTMAP" >>
+TYPE_PARSER(sourced(  //
+    "DEFAULTMAP" >>
         construct<OmpClause>(construct<OmpClause::Defaultmap>(
             parenthesized("TOFROM"_tok >> ":"_tok >> "SCALAR"_tok))) ||
     "INBRANCH" >> construct<OmpClause>(construct<OmpClause::Inbranch>()) ||
@@ -230,7 +231,7 @@ TYPE_PARSER("DEFAULTMAP" >>
     "REDUCTION" >>
         construct<OmpClause>(parenthesized(Parser<OmpReductionClause>{})) ||
     "SCHEDULE" >>
-        construct<OmpClause>(parenthesized(Parser<OmpScheduleClause>{})))
+        construct<OmpClause>(parenthesized(Parser<OmpScheduleClause>{}))))
 
 // [Clause, [Clause], ...]
 TYPE_PARSER(
@@ -327,7 +328,8 @@ TYPE_PARSER("TARGET ENTER DATA" >>
                            construct<OmpStandaloneDirective::TargetUpdate>()))
 
 // Directives enclosing structured-block
-TYPE_PARSER("MASTER" >>
+TYPE_PARSER(sourced(  //
+    "MASTER" >>
         construct<OmpBlockDirective>(construct<OmpBlockDirective::Master>()) ||
     "ORDERED" >>
         construct<OmpBlockDirective>(construct<OmpBlockDirective::Ordered>()) ||
@@ -349,7 +351,7 @@ TYPE_PARSER("MASTER" >>
     "TASK" >>
         construct<OmpBlockDirective>(construct<OmpBlockDirective::Task>()) ||
     "TEAMS" >>
-        construct<OmpBlockDirective>(construct<OmpBlockDirective::Teams>()))
+        construct<OmpBlockDirective>(construct<OmpBlockDirective::Teams>())))
 
 TYPE_PARSER(construct<OmpReductionInitializerClause>("INITIALIZER"_tok >>
     parenthesized("OMP_PRIV"_tok >> "="_tok >> indirect(expr))))

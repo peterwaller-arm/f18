@@ -400,6 +400,7 @@ public:
   void PopScope();
   void SetScope(Scope &);
 
+  // TODO: maybe extend this for OMP directives
   template<typename T> bool Pre(const parser::Statement<T> &x) {
     messageHandler().set_currStmtSource(&x.source);
     currScope_->AddSourceRange(x.source);
@@ -839,7 +840,7 @@ private:
 
 // Resolve construct entities and statement entities.
 // Check that construct names don't conflict with other names.
-class ConstructVisitor : public DeclarationVisitor {
+class ConstructVisitor : public virtual DeclarationVisitor {
 public:
   bool Pre(const parser::ConcurrentHeader &);
   void Post(const parser::ConcurrentHeader &);
@@ -939,11 +940,52 @@ private:
   Selector ResolveSelector(const parser::Selector &);
 };
 
+static const parser::Name *GetIfName(const parser::Designator &designator) {
+  const auto *dataRef{std::get_if<parser::DataRef>(&designator.u)};
+  return dataRef ? std::get_if<parser::Name>(&dataRef->u) : nullptr;
+}
+
+// Resolve construct entities and statement entities.
+// Check that construct names don't conflict with other names.
+class OmpVisitor : public virtual DeclarationVisitor {
+public:
+  bool Pre(const parser::OmpBlockDirective &x) {
+    PushScope(Scope::Kind::Block, nullptr);
+    return true;
+  }
+  bool Pre(const parser::OmpEndBlockDirective &) {
+    PopScope();
+    return false;
+  }
+  bool Pre(const parser::OmpObject &x) {
+    const auto &kind{std::get<parser::OmpObject::Kind>(x.t)};
+    const auto &designator{std::get<parser::Designator>(x.t)};
+    const auto *name{GetIfName(designator)};
+    if (kind == parser::OmpObject::Kind::Object) {
+      if (name) {
+        DeclareLocalEntity(*name);
+      } else {
+        name = ResolveDesignator(designator);
+      }
+      if (name && name->symbol) {
+        // maybe set flag on symbol
+      }
+    } else {
+      auto *symbol{name ? currScope().FindCommonBlock(name->source) : nullptr};
+      if (!symbol) {
+        Say(designator.source, "Not a COMMON block name"_err_en_US);
+      }
+    }
+    return true;
+  }
+};
+
 // Walk the parse tree and resolve names to symbols.
 class ResolveNamesVisitor : public virtual ScopeHandler,
                             public ModuleVisitor,
                             public SubprogramVisitor,
-                            public ConstructVisitor {
+                            public ConstructVisitor,
+                            public OmpVisitor {
 public:
   using ArraySpecVisitor::Post;
   using ConstructVisitor::Post;
@@ -956,6 +998,8 @@ public:
   using InterfaceVisitor::Pre;
   using ModuleVisitor::Post;
   using ModuleVisitor::Pre;
+  using OmpVisitor::Post;
+  using OmpVisitor::Pre;
   using ScopeHandler::Post;
   using ScopeHandler::Pre;
   using SubprogramVisitor::Post;
@@ -3563,14 +3607,13 @@ Symbol *DeclarationVisitor::DeclareLocalEntity(const parser::Name &name) {
     prev = &MakeSymbol(InclusiveScope(), name.source, Attrs{});
     ApplyImplicitRules(*prev);
     implicit = true;
+  } else if (prev->owner() == currScope()) {
+    SayAlreadyDeclared(name, *prev);
+    return nullptr;
   }
   if (!ConvertToObjectEntity(*prev) || prev->attrs().test(Attr::PARAMETER)) {
     SayWithDecl(
         name, *prev, "Locality attribute not allowed on '%s'"_err_en_US);
-    return nullptr;
-  }
-  if (prev->owner() == currScope()) {
-    SayAlreadyDeclared(name, *prev);
     return nullptr;
   }
   name.symbol = nullptr;

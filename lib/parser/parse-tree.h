@@ -3443,6 +3443,7 @@ struct OmpClause {
   WRAPPER_CLASS(To, std::list<Designator>);
   WRAPPER_CLASS(Uniform, std::list<Name>);
   WRAPPER_CLASS(UseDevicePtr, std::list<Name>);
+  CharBlock source;
   std::variant<Defaultmap, Inbranch, Mergeable, Nogroup, Notinbranch, OmpNowait,
       Untied, Collapse, Copyin, Copyprivate, Device, DistSchedule, Final,
       Firstprivate, From, Grainsize, Lastprivate, NumTasks, NumTeams,
@@ -3498,6 +3499,7 @@ struct OmpBlockDirective {
   EMPTY_CLASS(Taskgroup);
   EMPTY_CLASS(Task);
   EMPTY_CLASS(Teams);
+  CharBlock source;
   std::variant<Master, Ordered, ParallelWorkshare, Parallel, TargetData,
       TargetParallel, TargetTeams, Target, Taskgroup, Task, Teams>
       u;
