@@ -132,6 +132,7 @@ public:
   void Post(const IntrinsicTypeSpec::DoubleComplex &) {
     Word("DOUBLE COMPLEX");
   }
+  void Before(const IntrinsicTypeSpec::NCharacter &x) { Word("NCHARACTER"); }
   void Before(const IntegerTypeSpec &x) {  // R705
     Word("INTEGER");
   }
@@ -187,12 +188,21 @@ public:
   void Unparse(const CharLiteralConstant &x) {  // R724
     const auto &str{std::get<std::string>(x.t)};
     if (const auto &k{std::get<std::optional<KindParam>>(x.t)}) {
-      Walk(*k), Put('_');
+      if (std::holds_alternative<KindParam::Kanji>(k->u)) {
+        Word("NC");
+        std::u16string decoded{DecodeString<Encoding::EUC_JP>(str, true)};
+        std::string encoded{EncodeString<Encoding::EUC_JP>(decoded)};
+        Put(QuoteCharacterLiteral(encoded, backslashEscapes_));
+      } else {
+        Walk(*k), Put('_');
+        PutNormalized(str);
+      }
+    } else {
+      PutNormalized(str);
     }
-    PutNormalized(str);
   }
   void Unparse(const HollerithLiteralConstant &x) {
-    auto ucs{DecodeString<std::u32string, Encoding::UTF_8>(x.v, false)};
+    std::u32string ucs{DecodeString<Encoding::UTF_8>(x.v, false)};
     Unparse(ucs.size());
     Put('H');
     for (char32_t ch : ucs) {
@@ -2624,7 +2634,7 @@ void UnparseVisitor::Put(const std::string &str) {
 }
 
 void UnparseVisitor::PutNormalized(const std::string &str) {
-  auto decoded{DecodeString<std::string, Encoding::LATIN_1>(str, true)};
+  std::string decoded{DecodeString<Encoding::LATIN_1>(str, true)};
   std::string encoded{EncodeString<Encoding::LATIN_1>(decoded)};
   Put(QuoteCharacterLiteral(encoded, backslashEscapes_));
 }

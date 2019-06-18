@@ -58,7 +58,7 @@
   print*
   print*, 'Ok'
 
-  !ERROR: Duplicate UNIT specifier
+  !ERROR: duplicate UNIT specifier
   write(internal_file, unit=*)
 
   !ERROR: WRITE statement must have a UNIT specifier
@@ -70,64 +70,62 @@
   !ERROR: WRITE statement must not have a PAD specifier
   write(*, eor=9, blank='zero', end=9, pad='no')
 
-  !ERROR: If NML appears, REC must not appear
-  !ERROR: If NML appears, FMT must not appear
-  !ERROR: If NML appears, a data list must not appear
+  !ERROR: if NML appears, REC must not appear
+  !ERROR: if NML appears, FMT must not appear
+  !ERROR: if NML appears, a data list must not appear
   write(10, nnn, rec=40, fmt=1) 'Ok'
 
-  !ERROR: If UNIT=* appears, POS must not appear
+  !ERROR: if UNIT=* appears, POS must not appear
   write(*, pos=n, nml=nnn)
 
-  !ERROR: If UNIT=* appears, REC must not appear
+  !ERROR: if UNIT=* appears, REC must not appear
   write(*, rec=n)
 
-  !ERROR: If UNIT=internal-file appears, POS must not appear
+  !ERROR: if UNIT=internal-file appears, POS must not appear
   write(internal_file, err=9, pos=n, nml=nnn)
 
-  !ERROR: If UNIT=internal-file appears, REC must not appear
+  !ERROR: if UNIT=internal-file appears, REC must not appear
   write(internal_file, rec=n, err=9)
 
-  !ERROR: If UNIT=* appears, REC must not appear
+  !ERROR: if UNIT=* appears, REC must not appear
   write(*, rec=13) 'Ok'
 
-  !ERROR: If ADVANCE appears, UNIT=internal-file must not appear
+  !ERROR: if ADVANCE appears, UNIT=internal-file must not appear
   write(internal_file, advance='yes', fmt=1) 'Ok'
 
-  !ERROR: If ADVANCE appears, an explicit format must also appear
+  !ERROR: if ADVANCE appears, an explicit format must also appear
   write(10, advance='yes') 'Ok'
 
-  !ERROR: Invalid ASYNCHRONOUS value 'non'
+  !ERROR: invalid ASYNCHRONOUS value 'non'
   write(*, asynchronous='non')
 
-  !ERROR: If ASYNCHRONOUS='YES' appears, UNIT=number must also appear
+  !ERROR: if ASYNCHRONOUS='YES' appears, UNIT=number must also appear
   write(*, asynchronous='yes')
 
-  !ERROR: If ASYNCHRONOUS='YES' appears, UNIT=number must also appear
+  !ERROR: if ASYNCHRONOUS='YES' appears, UNIT=number must also appear
   write(internal_file, asynchronous='yes')
 
-  !ERROR: If ID appears, ASYNCHRONOUS='YES' must also appear
+  !ERROR: if ID appears, ASYNCHRONOUS='YES' must also appear
   write(10, *, id=id) "Ok"
 
-  !ERROR: If ID appears, ASYNCHRONOUS='YES' must also appear
+  !ERROR: if ID appears, ASYNCHRONOUS='YES' must also appear
   write(10, *, id=id, asynchronous='no') "Ok"
 
-  !ERROR: If POS appears, REC must not appear
+  !ERROR: if POS appears, REC must not appear
   write(10, pos=13, rec=13) 'Ok'
 
-  !ERROR: If DECIMAL appears, FMT or NML must also appear
-  !ERROR: If ROUND appears, FMT or NML must also appear
-  !ERROR: If SIGN appears, FMT or NML must also appear
-  !ERROR: Invalid DECIMAL value 'Komma'
+  !ERROR: if DECIMAL appears, FMT or NML must also appear
+  !ERROR: if ROUND appears, FMT or NML must also appear
+  !ERROR: if SIGN appears, FMT or NML must also appear
+  !ERROR: invalid DECIMAL value 'Komma'
   write(10, decimal='Komma', sign='plus', round='down') jj
 
-  !ERROR: If DELIM appears, FMT=* or NML must also appear
-  !ERROR: Invalid DELIM value 'Nix'
-  write(delim='Nix', fmt='(A)', unit=10) 'Ok'
+  !ERROR: if DELIM appears, FMT=* or NML must also appear
+  !ERROR: invalid DELIM value 'Nix'
+  write(delim='Nix', fmt='(A)', unit=10) 'Ok' !C1228
 
   !ERROR: ID kind (1) is smaller than default INTEGER kind (4)
   write(id=id1, unit=10, asynchronous='Yes') 'Ok'
-
-  write(*, '(X)')
 
 1 format (A)
 9 continue

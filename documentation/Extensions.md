@@ -23,6 +23,7 @@ Extensions, deletions, and legacy features supported by default
 * Signed complex literal constants
 * DEC `STRUCTURE`, `RECORD`, `UNION`, and `MAP`
 * Structure field access with `.field`
+* `NCHARACTER` type and `NC` Kanji character literals
 * `BYTE` as synonym for `INTEGER(KIND=1)`
 * Quad precision REAL literals with `Q`
 * `X` prefix/suffix as synonym for `Z` on hexadecimal literals
@@ -33,8 +34,7 @@ Extensions, deletions, and legacy features supported by default
 * Leading comma allowed before I/O item list
 * Empty parentheses allowed in `PROGRAM P()`
 * Missing parentheses allowed in `FUNCTION F`
-* Cray based `POINTER(p,x)` and `LOC()` intrinsic (with `%LOC()` as
-  an alias)
+* Cray based `POINTER(p,x)`
 * Arithmetic `IF`.  (Which branch should NaN take? Fall through?)
 * `ASSIGN` statement, assigned `GO TO`, and assigned format
 * `PAUSE` statement
@@ -70,9 +70,6 @@ Extensions, deletions, and legacy features supported by default
   unambiguous (including the right hand sides of assigments and initializations
   of INTEGER entities).
 * EQUIVALENCE of numeric and character sequences (a ubiquitous extension)
-* Values for whole anonymous parent components in structure constructors
-  (e.g., `EXTENDEDTYPE(PARENTTYPE(1,2,3))` rather than `EXTENDEDTYPE(1,2,3)`
-   or `EXTENDEDTYPE(PARENTTYPE=PARENTTYPE(1,2,3))`).
 
 Extensions supported when enabled by options
 --------------------------------------------
@@ -101,7 +98,6 @@ Extensions and legacy features deliberately not supported
 * `T` and `F` as abbreviations for `.TRUE.` and `.FALSE.` in DATA (PGI/XLF)
 * Use of host FORMAT labels in internal subprograms (PGI-only feature)
 * ALLOCATE(TYPE(derived)::...) as variant of correct ALLOCATE(derived::...) (PGI only)
-* Defining an explicit interface for a subprogram within itself (PGI only)
 * USE association of a procedure interface within that same procedure's definition
 * After "TYPE,EXTENDS(T1)::T2;...", the nonstandard structure constructor
   T2(T1(x)) is accepted by PGI/GNU/Intel.  Use T2(T1=T1(x)) or T2(x) instead.
@@ -110,5 +106,3 @@ Extensions and legacy features deliberately not supported
 * IF (integer expression) THEN ... END IF  (PGI/Intel)
 * Comparsion of LOGICAL with ==/.EQ. rather than .EQV. (also .NEQV.) (PGI/Intel)
 * Procedure pointers in COMMON blocks (PGI/Intel)
-* Underindexing multi-dimensional arrays (e.g., A(1) rather than A(1,1)) (PGI only)
-* Legacy PGI `NCHARACTER` type and `NC` Kanji character literals

@@ -23,8 +23,6 @@
 
 namespace Fortran::evaluate {
 
-bool formatForPGF90{false};
-
 static void ShapeAsFortran(std::ostream &o, const ConstantSubscripts &shape) {
   if (GetRank(shape) > 1) {
     o << ",shape=";
@@ -91,7 +89,7 @@ std::ostream &Constant<Type<TypeCategory::Character, KIND>>::AsFortran(
     Scalar<Result> value{values_.substr(j * length_, length_)};
     if (j > 0) {
       o << ',';
-    } else if (Rank() == 0 && (Result::kind != 1 || !formatForPGF90)) {
+    } else if (Rank() == 0) {
       o << Result::kind << '_';
     }
     o << parser::QuoteCharacterLiteral(value);
@@ -397,6 +395,7 @@ std::string DynamicType::AsFortran() const {
   if (derived_ != nullptr) {
     CHECK(category_ == TypeCategory::Derived);
     return DerivedTypeSpecAsFortran(*derived_);
+    // TODO pmk: how to indicate polymorphism?  can't use TYPE() vs CLASS()
   } else if (charLength_ != nullptr) {
     std::string result{"CHARACTER(KIND="s + std::to_string(kind_) + ",LEN="};
     if (charLength_->isAssumed()) {
@@ -409,10 +408,8 @@ std::string DynamicType::AsFortran() const {
       result += ss.str();
     }
     return result + ')';
-  } else if (IsUnlimitedPolymorphic()) {
-    return "CLASS(*)";
-  } else if (IsAssumedType()) {
-    return "TYPE(*)";
+  } else if (isPolymorphic_) {
+    return "CLASS(*)";  // not valid, just for debugging
   } else if (kind_ == 0) {
     return "(typeless intrinsic function argument)";
   } else {
@@ -531,25 +528,22 @@ std::ostream &BaseObject::AsFortran(std::ostream &o) const {
 
 template<int KIND>
 std::ostream &TypeParamInquiry<KIND>::AsFortran(std::ostream &o) const {
-  if (base_.has_value()) {
-    return base_->AsFortran(o) << '%';
-  }
+  std::visit(
+      common::visitors{
+          [&](const Symbol *sym) {
+            if (sym != nullptr) {
+              EmitVar(o, *sym) << '%';
+            }
+          },
+          [&](const Component &comp) { EmitVar(o, comp) << '%'; },
+      },
+      base_);
   return EmitVar(o, *parameter_);
 }
 
 std::ostream &Component::AsFortran(std::ostream &o) const {
   base_.value().AsFortran(o);
   return EmitVar(o << '%', *symbol_);
-}
-
-std::ostream &NamedEntity::AsFortran(std::ostream &o) const {
-  std::visit(
-      common::visitors{
-          [&](const Symbol *s) { EmitVar(o, *s); },
-          [&](const Component &c) { c.AsFortran(o); },
-      },
-      u_);
-  return o;
 }
 
 std::ostream &Triplet::AsFortran(std::ostream &o) const {
@@ -564,7 +558,7 @@ std::ostream &Subscript::AsFortran(std::ostream &o) const {
 }
 
 std::ostream &ArrayRef::AsFortran(std::ostream &o) const {
-  base_.AsFortran(o);
+  EmitVar(o, base_);
   char separator{'('};
   for (const Subscript &ss : subscript_) {
     ss.AsFortran(o << separator);
@@ -614,7 +608,7 @@ std::ostream &DataRef::AsFortran(std::ostream &o) const {
 std::ostream &Substring::AsFortran(std::ostream &o) const {
   EmitVar(o, parent_) << '(';
   EmitVar(o, lower_) << ':';
-  return EmitVar(o, upper_) << ')';
+  return EmitVar(o, upper_);
 }
 
 std::ostream &ComplexPart::AsFortran(std::ostream &o) const {
@@ -643,7 +637,16 @@ std::ostream &DescriptorInquiry::AsFortran(std::ostream &o) const {
   case Field::Stride: o << "%STRIDE("; break;
   case Field::Rank: o << "rank("; break;
   }
-  base_.AsFortran(o);
+  std::visit(
+      common::visitors{
+          [&](const Symbol *sym) {
+            if (sym != nullptr) {
+              EmitVar(o, *sym);
+            }
+          },
+          [&](const Component &comp) { EmitVar(o, comp); },
+      },
+      base_);
   if (dimension_ >= 0) {
     o << ",dim=" << (dimension_ + 1);
   }

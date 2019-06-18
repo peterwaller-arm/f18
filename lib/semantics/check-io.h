@@ -35,14 +35,10 @@ public:
   void Enter(const parser::FlushStmt &) { Init(IoStmtKind::Flush); }
   void Enter(const parser::InquireStmt &) { Init(IoStmtKind::Inquire); }
   void Enter(const parser::OpenStmt &) { Init(IoStmtKind::Open); }
-  void Enter(const parser::PrintStmt &) { Init(IoStmtKind::Print); }
   void Enter(const parser::ReadStmt &) { Init(IoStmtKind::Read); }
   void Enter(const parser::RewindStmt &) { Init(IoStmtKind::Rewind); }
   void Enter(const parser::WaitStmt &) { Init(IoStmtKind::Wait); }
   void Enter(const parser::WriteStmt &) { Init(IoStmtKind::Write); }
-
-  void Enter(
-      const parser::Statement<common::Indirection<parser::FormatStmt>> &);
 
   void Enter(const parser::ConnectSpec &);
   void Enter(const parser::ConnectSpec::CharExpr &);
@@ -88,7 +84,7 @@ private:
   ENUM_CLASS(Flag, IoControlList, InternalUnit, NumberUnit, StarUnit, CharFmt,
       LabelFmt, StarFmt, FmtOrNml, KnownAccess, AccessDirect, AccessStream,
       AdvanceYes, AsynchronousYes, KnownStatus, StatusNew, StatusReplace,
-      StatusScratch, DataList)
+      StatusScratch, DataList);
 
   template<typename R, typename T> std::optional<R> GetConstExpr(const T &x) {
     using DefaultCharConstantType =

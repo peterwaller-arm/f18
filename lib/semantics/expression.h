@@ -290,8 +290,8 @@ private:
   }
 
   // Analysis subroutines
-  int AnalyzeKindParam(
-      const std::optional<parser::KindParam> &, int defaultKind);
+  int AnalyzeKindParam(const std::optional<parser::KindParam> &,
+      int defaultKind, int kanjiKind = -1);
   template<typename PARSED> MaybeExpr ExprOrVariable(const PARSED &);
   template<typename PARSED> MaybeExpr IntLiteralConstant(const PARSED &);
   MaybeExpr AnalyzeString(std::string &&, int kind);
@@ -308,10 +308,9 @@ private:
   MaybeExpr TopLevelChecks(DataRef &&);
   std::optional<Expr<SubscriptInteger>> GetSubstringBound(
       const std::optional<parser::ScalarIntExpr> &);
+
   std::optional<ProcedureDesignator> AnalyzeProcedureComponentRef(
       const parser::ProcComponentRef &);
-  std::optional<ActualArgument> AnalyzeActualArgument(const parser::Expr &);
-  std::optional<ActualArgument> AnalyzeActualArgument(const parser::Variable &);
 
   struct CalleeAndArguments {
     ProcedureDesignator procedureDesignator;

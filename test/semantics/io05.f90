@@ -49,24 +49,24 @@
   !ERROR: INQUIRE statement must have a UNIT number or FILE specifier
   inquire(err=9)
 
-  !ERROR: If FILE appears, UNIT must not appear
+  !ERROR: if FILE appears, UNIT must not appear
   inquire(10, file='abc', blank=c(22), iostat=stat8)
 
-  !ERROR: Duplicate FILE specifier
+  !ERROR: duplicate FILE specifier
   inquire(file='abc', file='xyz')
 
-  !ERROR: Duplicate FORM specifier
+  !ERROR: duplicate FORM specifier
   inquire(form=c(1), iostat=stat1, form=c(2), file='abc')
 
-  !ERROR: Duplicate SIGN specifier
-  !ERROR: Duplicate READ specifier
-  !ERROR: Duplicate WRITE specifier
+  !ERROR: duplicate SIGN specifier
+  !ERROR: duplicate READ specifier
+  !ERROR: duplicate WRITE specifier
   inquire(1, read=c(1), write=c(2), sign=c(3), sign=c(4), read=c(5), write=c(1))
 
-  !ERROR: Duplicate IOMSG specifier
+  !ERROR: duplicate IOMSG specifier
   inquire(10, iomsg=msg, pos=ipos, iomsg=msg)
 
-  !ERROR: If ID appears, PENDING must also appear
+  !ERROR: if ID appears, PENDING must also appear
   inquire(file='abc', id=id)
 
 9 continue

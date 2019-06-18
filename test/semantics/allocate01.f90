@@ -31,10 +31,12 @@ module m
 contains
   function mfoo(x)
     class(a_type) :: foo, x
+    allocatable :: x
     foo = x
   end function
   subroutine mbar(x)
-    class(a_type) :: x
+    class(a_type), allocatable :: x
+    allocate(x)
   end subroutine
 end module
 

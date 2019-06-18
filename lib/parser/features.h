@@ -24,15 +24,14 @@ ENUM_CLASS(LanguageFeature, BackslashEscapes, OldDebugLines,
     FixedFormContinuationWithColumn1Ampersand, LogicalAbbreviations,
     XOROperator, PunctuationInNames, OptionalFreeFormSpace, BOZExtensions,
     EmptyStatement, AlternativeNE, ExecutionPartNamelist, DECStructures,
-    DoubleComplex, Byte, StarKind, QuadPrecision, SlashInitialization,
+    DoubleComplex, Kanji, Byte, StarKind, QuadPrecision, SlashInitialization,
     TripletInArrayConstructor, MissingColons, SignedComplexLiteral,
     OldStyleParameter, ComplexConstructor, PercentLOC, SignedPrimary, FileName,
     Convert, Dispose, IOListLeadingComma, AbbreviatedEditDescriptor,
     ProgramParentheses, PercentRefAndVal, OmitFunctionDummies, CrayPointer,
     Hollerith, ArithmeticIF, Assign, AssignedGOTO, Pause, OpenMP,
     CruftAfterAmpersand, ClassicCComments, AdditionalFormats, BigIntLiterals,
-    RealDoControls, EquivalenceNumericWithCharacter, AdditionalIntrinsics,
-    AnonymousParents)
+    RealDoControls, EquivalenceNumericWithCharacter)
 
 using LanguageFeatures =
     common::EnumSet<LanguageFeature, LanguageFeature_enumSize>;

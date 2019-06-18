@@ -29,16 +29,16 @@
   !ERROR: CLOSE statement must have a UNIT number specifier
   close(iostat=stat1)
 
-  !ERROR: Duplicate UNIT specifier
+  !ERROR: duplicate UNIT specifier
   close(13, unit=14, err=9)
 
-  !ERROR: Duplicate ERR specifier
+  !ERROR: duplicate ERR specifier
   close(err=9, unit=15, err=9, iostat=stat8)
 
-  !ERROR: Invalid STATUS value 'kept'
+  !ERROR: invalid STATUS value 'kept'
   close(status='kept', unit=16)
 
-  !ERROR: Invalid STATUS value 'old'
+  !ERROR: invalid STATUS value 'old'
   close(status='old', unit=17)
 
 9 continue

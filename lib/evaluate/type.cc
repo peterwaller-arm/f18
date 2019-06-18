@@ -17,7 +17,6 @@
 #include "fold.h"
 #include "../common/idioms.h"
 #include "../common/template.h"
-#include "../parser/characters.h"
 #include "../semantics/scope.h"
 #include "../semantics/symbol.h"
 #include "../semantics/tools.h"
@@ -100,7 +99,8 @@ template<typename A> inline bool PointeeComparison(const A *x, const A *y) {
 bool DynamicType::operator==(const DynamicType &that) const {
   return category_ == that.category_ && kind_ == that.kind_ &&
       PointeeComparison(charLength_, that.charLength_) &&
-      PointeeComparison(derived_, that.derived_);
+      PointeeComparison(derived_, that.derived_) &&
+      isPolymorphic_ == that.isPolymorphic_;
 }
 
 bool DynamicType::IsAssumedLengthCharacter() const {
@@ -142,8 +142,7 @@ static const bool IsAncestorTypeOf(const semantics::DerivedTypeSpec *ancestor,
 
 bool DynamicType::IsTypeCompatibleWith(const DynamicType &that) const {
   return *this == that || IsUnlimitedPolymorphic() ||
-      (IsPolymorphic() && derived_ != nullptr &&
-          IsAncestorTypeOf(derived_, that.derived_));
+      (isPolymorphic_ && IsAncestorTypeOf(derived_, that.derived_));
 }
 
 std::optional<DynamicType> DynamicType::From(
@@ -165,10 +164,8 @@ std::optional<DynamicType> DynamicType::From(
         *derived, type.category() == semantics::DeclTypeSpec::ClassDerived};
   } else if (type.category() == semantics::DeclTypeSpec::ClassStar) {
     return DynamicType::UnlimitedPolymorphic();
-  } else if (type.category() == semantics::DeclTypeSpec::TypeStar) {
-    return DynamicType::AssumedType();
   } else {
-    common::die("DynamicType::From(DeclTypeSpec): failed");
+    // Assumed-type dummy arguments (TYPE(*)) do not have dynamic types.
   }
   return std::nullopt;
 }
@@ -222,27 +219,6 @@ DynamicType DynamicType::ResultTypeForMultiply(const DynamicType &that) const {
 bool SomeKind<TypeCategory::Derived>::operator==(
     const SomeKind<TypeCategory::Derived> &that) const {
   return PointeeComparison(derivedTypeSpec_, that.derivedTypeSpec_);
-}
-
-int SelectedCharKind(const std::string &s) {  // 16.9.168
-  auto lower{parser::ToLowerCaseLetters(s)};
-  auto n{lower.size()};
-  while (n > 0 && lower[0] == ' ') {
-    lower.erase(0, 1);
-    --n;
-  }
-  while (n > 0 && lower[n - 1] == ' ') {
-    lower.erase(--n, 1);
-  }
-  if (lower == "ascii") {
-    return 1;
-  } else if (lower == "ucs-2") {
-    return 2;
-  } else if (lower == "iso_10646" || lower == "ucs-4") {
-    return 4;
-  } else {
-    return -1;
-  }
 }
 
 class SelectedIntKindVisitor {

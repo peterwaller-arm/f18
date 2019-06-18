@@ -660,7 +660,7 @@ struct CharSelector {
 //        integer-type-spec | REAL [kind-selector] | DOUBLE PRECISION |
 //        COMPLEX [kind-selector] | CHARACTER [char-selector] |
 //        LOGICAL [kind-selector]
-// Extensions: DOUBLE COMPLEX
+// Extensions: DOUBLE COMPLEX, NCHARACTER (Kanji)
 struct IntrinsicTypeSpec {
   UNION_CLASS_BOILERPLATE(IntrinsicTypeSpec);
   struct Real {
@@ -685,8 +685,9 @@ struct IntrinsicTypeSpec {
     std::optional<KindSelector> kind;
   };
   EMPTY_CLASS(DoubleComplex);
+  WRAPPER_CLASS(NCharacter, std::optional<LengthSelector>);
   std::variant<IntegerTypeSpec, Real, DoublePrecision, Complex, Character,
-      Logical, DoubleComplex>
+      Logical, DoubleComplex, NCharacter>
       u;
 };
 
@@ -736,7 +737,8 @@ struct DeclarationTypeSpec {
 // R709 kind-param -> digit-string | scalar-int-constant-name
 struct KindParam {
   UNION_CLASS_BOILERPLATE(KindParam);
-  std::variant<std::uint64_t, Scalar<Integer<Constant<Name>>>> u;
+  EMPTY_CLASS(Kanji);
+  std::variant<std::uint64_t, Scalar<Integer<Constant<Name>>>, Kanji> u;
 };
 
 // R707 signed-int-literal-constant -> [sign] int-literal-constant
@@ -961,7 +963,7 @@ struct ComponentAttrSpec {
 };
 
 // R806 null-init -> function-reference
-// TODO replace with semantic check on expression
+// TODO check that NULL is still intrinsic
 EMPTY_CLASS(NullInit);
 
 // R744 initial-data-target -> designator
@@ -3443,7 +3445,6 @@ struct OmpClause {
   WRAPPER_CLASS(Uniform, std::list<Name>);
   WRAPPER_CLASS(UseDevicePtr, std::list<Name>);
   WRAPPER_CLASS(IsDevicePtr, std::list<Name>);
-  CharBlock source;
   std::variant<Defaultmap, Inbranch, Mergeable, Nogroup, Notinbranch, OmpNowait,
       Untied, Collapse, Copyin, Copyprivate, Device, DistSchedule, Final,
       Firstprivate, From, Grainsize, Lastprivate, NumTasks, NumTeams,
@@ -3500,7 +3501,6 @@ struct OmpBlockDirective {
   EMPTY_CLASS(Taskgroup);
   EMPTY_CLASS(Task);
   EMPTY_CLASS(Teams);
-  CharBlock source;
   std::variant<Master, Ordered, ParallelWorkshare, Parallel, TargetData,
       TargetParallel, TargetTeams, Target, Taskgroup, Task, Teams>
       u;
@@ -3650,7 +3650,6 @@ struct OmpLoopDirective {
   EMPTY_CLASS(TeamsDistributeParallelDo);
   EMPTY_CLASS(TeamsDistributeSimd);
   EMPTY_CLASS(TeamsDistribute);
-  CharBlock source;
   std::variant<DistributeParallelDoSimd, DistributeParallelDo, DistributeSimd,
       Distribute, ParallelDoSimd, ParallelDo, Do, DoSimd, Simd,
       TargetParallelDoSimd, TargetParallelDo,

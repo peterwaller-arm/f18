@@ -32,8 +32,6 @@
 
 namespace Fortran::evaluate {
 
-extern bool formatForPGF90;
-
 template<typename A>
 auto operator<<(std::ostream &o, const A &x) -> decltype(x.AsFortran(o)) {
   return x.AsFortran(o);

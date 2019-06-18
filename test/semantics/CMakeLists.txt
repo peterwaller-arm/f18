@@ -32,10 +32,6 @@ set(ERROR_TESTS
   io04.f90
   io05.f90
   io06.f90
-  io07.f90
-  io08.f90
-  io09.f90
-  io10.f90
   kinds02.f90
   resolve01.f90
   resolve02.f90
@@ -88,7 +84,6 @@ set(ERROR_TESTS
   resolve49.f90
   resolve50.f90
   resolve51.f90
-  resolve52.f90
   stop01.f90
   structconst01.f90
   structconst02.f90
@@ -133,10 +128,12 @@ set(ERROR_TESTS
   dosemantics04.f90
   expr-errors01.f90
   null01.f90
-  omp-clause-validity01.f90
-#  omp-nested01.f90
   equivalence01.f90
-  init01.f90
+  ${PROJECT_SOURCE_DIR}/module/ieee_arithmetic.f90
+  ${PROJECT_SOURCE_DIR}/module/ieee_exceptions.f90
+  ${PROJECT_SOURCE_DIR}/module/ieee_features.f90
+  ${PROJECT_SOURCE_DIR}/module/iso_c_binding.f90
+  ${PROJECT_SOURCE_DIR}/module/iso_fortran_env.f90
 )
 
 # These test files have expected symbols in the source

@@ -35,22 +35,22 @@
   wait(10)
   wait(99, id=id1, end=9, eor=9, err=9, iostat=stat1, iomsg=msg1)
 
-  !ERROR: Duplicate UNIT specifier
+  !ERROR: duplicate UNIT specifier
   backspace(10, unit=11)
 
-  !ERROR: Duplicate IOSTAT specifier
+  !ERROR: duplicate IOSTAT specifier
   endfile(iostat=stat2, err=9, unit=10, iostat=stat8, iomsg=msg1)
 
   !ERROR: REWIND statement must have a UNIT number specifier
   rewind(iostat=stat2)
 
-  !ERROR: Duplicate ERR specifier
-  !ERROR: Duplicate ERR specifier
+  !ERROR: duplicate ERR specifier
+  !ERROR: duplicate ERR specifier
   flush(err=9, unit=10, &
         err=9, &
         err=9)
 
-  !ERROR: Duplicate ID specifier
+  !ERROR: duplicate ID specifier
   !ERROR: WAIT statement must have a UNIT number specifier
   wait(id=id2, eor=9, id=id3)
 

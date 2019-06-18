@@ -43,10 +43,16 @@ inline int GetRank(const ConstantSubscripts &s) {
 
 std::size_t TotalElementCount(const ConstantSubscripts &);
 
+inline ConstantSubscripts InitialSubscripts(int rank) {
+  return ConstantSubscripts(rank, 1);  // parens, not braces: "rank" copies of 1
+}
+inline ConstantSubscripts InitialSubscripts(const ConstantSubscripts &shape) {
+  return InitialSubscripts(GetRank(shape));
+}
+
 // Increments a vector of subscripts in Fortran array order (first dimension
 // varying most quickly).  Returns false when last element was visited.
-bool IncrementSubscripts(ConstantSubscripts &, const ConstantSubscripts &shape,
-    const ConstantSubscripts &lbound);
+bool IncrementSubscripts(ConstantSubscripts &, const ConstantSubscripts &shape);
 
 // Constant<> is specialized for Character kinds and SomeDerived.
 // The non-Character intrinsic types, and SomeDerived, share enough
@@ -76,8 +82,6 @@ public:
   std::size_t size() const { return values_.size(); }
   const std::vector<Element> &values() const { return values_; }
   const ConstantSubscripts &shape() const { return shape_; }
-  const ConstantSubscripts &lbounds() const { return lbounds_; }
-  void set_lbounds(ConstantSubscripts &&);
   constexpr Result result() const { return result_; }
 
   constexpr DynamicType GetType() const { return result_.GetType(); }
@@ -90,7 +94,6 @@ protected:
   Result result_;
   std::vector<Element> values_;
   ConstantSubscripts shape_;
-  ConstantSubscripts lbounds_;
 };
 
 template<typename T> class Constant : public ConstantBase<T> {
@@ -110,7 +113,7 @@ public:
     }
   }
 
-  // Apply subscripts.
+  // Apply 1-based subscripts
   Element At(const ConstantSubscripts &) const;
 
   Constant Reshape(ConstantSubscripts &&) const;
@@ -134,8 +137,6 @@ public:
   bool empty() const;
   std::size_t size() const;
   const ConstantSubscripts &shape() const { return shape_; }
-  const ConstantSubscripts &lbounds() const { return lbounds_; }
-  void set_lbounds(ConstantSubscripts &&);
 
   ConstantSubscript LEN() const { return length_; }
 
@@ -147,7 +148,7 @@ public:
     }
   }
 
-  // Apply subscripts
+  // Apply 1-based subscripts
   Scalar<Result> At(const ConstantSubscripts &) const;
 
   Constant Reshape(ConstantSubscripts &&) const;
@@ -161,7 +162,6 @@ private:
   Scalar<Result> values_;  // one contiguous string
   ConstantSubscript length_;
   ConstantSubscripts shape_;
-  ConstantSubscripts lbounds_;
 };
 
 class StructureConstructor;
