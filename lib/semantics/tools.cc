@@ -150,7 +150,6 @@ bool IsFunction(const Symbol &symbol) {
             const auto &ifc{x.interface()};
             return ifc.type() || (ifc.symbol() && IsFunction(*ifc.symbol()));
           },
-          [](const ProcBindingDetails &x) { return IsFunction(x.symbol()); },
           [](const UseDetails &x) { return IsFunction(x.symbol()); },
           [](const auto &) { return false; },
       },
@@ -280,48 +279,15 @@ bool ExprTypeKindIsDefault(
       dynamicType->kind() == context.GetDefaultKind(dynamicType->category());
 }
 
-const Symbol *FindInterface(const Symbol &symbol) {
-  return std::visit(
-      common::visitors{
-          [](const ProcEntityDetails &details) {
-            return details.interface().symbol();
-          },
-          [](const ProcBindingDetails &details) { return &details.symbol(); },
-          [](const auto &) -> const Symbol * { return nullptr; },
-      },
-      symbol.details());
-}
-
-const Symbol *FindSubprogram(const Symbol &symbol) {
-  return std::visit(
-      common::visitors{
-          [&](const ProcEntityDetails &details) -> const Symbol * {
-            if (const Symbol * interface{details.interface().symbol()}) {
-              return FindSubprogram(*interface);
-            } else {
-              return &symbol;
-            }
-          },
-          [](const ProcBindingDetails &details) {
-            return FindSubprogram(details.symbol());
-          },
-          [&](const SubprogramDetails &) { return &symbol; },
-          [](const UseDetails &details) {
-            return FindSubprogram(details.symbol());
-          },
-          [](const HostAssocDetails &details) {
-            return FindSubprogram(details.symbol());
-          },
-          [](const auto &) -> const Symbol * { return nullptr; },
-      },
-      symbol.details());
-}
-
 const Symbol *FindFunctionResult(const Symbol &symbol) {
-  if (const Symbol * subp{FindSubprogram(symbol)}) {
-    const auto &details{subp->get<SubprogramDetails>()};
-    if (details.isFunction()) {
-      return &details.result();
+  if (const auto *procEntity{symbol.detailsIf<ProcEntityDetails>()}) {
+    const ProcInterface &interface{procEntity->interface()};
+    if (interface.symbol() != nullptr) {
+      return FindFunctionResult(*interface.symbol());
+    }
+  } else if (const auto *subp{symbol.detailsIf<SubprogramDetails>()}) {
+    if (subp->isFunction()) {
+      return &subp->result();
     }
   }
   return nullptr;

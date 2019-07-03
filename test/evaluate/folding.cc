@@ -71,10 +71,8 @@ void TestHostRuntimeSubnormalFlushing() {
   if constexpr (std::is_same_v<host::HostType<R4>, float>) {
     Fortran::parser::CharBlock src;
     Fortran::parser::ContextualMessages messages{src, nullptr};
-    Fortran::common::IntrinsicTypeDefaultKinds defaults;
-    FoldingContext flushingContext{messages, defaults, defaultRounding, true};
-    FoldingContext noFlushingContext{
-        messages, defaults, defaultRounding, false};
+    FoldingContext flushingContext{messages, defaultRounding, true};
+    FoldingContext noFlushingContext{messages, defaultRounding, false};
 
     HostIntrinsicProceduresLibrary lib;
     lib.AddProcedure(HostRuntimeIntrinsicProcedure{

@@ -113,8 +113,7 @@ struct TestCall {
     std::cout << ')' << std::endl;
     CallCharacteristics call{fName};
     auto messages{strings.Messages(buffer)};
-    common::IntrinsicTypeDefaultKinds defaults;
-    FoldingContext context{messages, defaults};
+    FoldingContext context{messages};
     std::optional<SpecificCall> si{table.Probe(call, args, context)};
     if (resultType.has_value()) {
       TEST(si.has_value());

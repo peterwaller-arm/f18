@@ -101,8 +101,7 @@ std::optional<ExtentExpr> AsExtentArrayExpr(const Shape &shape) {
 
 std::optional<Constant<ExtentType>> AsConstantShape(const Shape &shape) {
   if (auto shapeArray{AsExtentArrayExpr(shape)}) {
-    common::IntrinsicTypeDefaultKinds defaults;
-    FoldingContext noFoldingContext{defaults};
+    FoldingContext noFoldingContext;
     auto folded{Fold(noFoldingContext, std::move(*shapeArray))};
     if (auto *p{UnwrapConstantValue<ExtentType>(folded)}) {
       return std::move(*p);
@@ -144,8 +143,7 @@ static ExtentExpr ComputeTripCount(
       std::move(stride)};
   ExtentExpr extent{
       Extremum<ExtentType>{std::move(span), ExtentExpr{0}, Ordering::Greater}};
-  common::IntrinsicTypeDefaultKinds defaults;
-  FoldingContext noFoldingContext{defaults};
+  FoldingContext noFoldingContext;
   return Fold(noFoldingContext, std::move(extent));
 }
 

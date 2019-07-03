@@ -132,7 +132,7 @@ private:
   const evaluate::IntrinsicProcTable intrinsics_;
   Scope globalScope_;
   parser::Messages messages_;
-  evaluate::FoldingContext foldingContext_{defaultKinds_};
+  evaluate::FoldingContext foldingContext_;
 
   bool CheckError(bool);
 };
