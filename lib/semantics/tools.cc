@@ -453,22 +453,6 @@ bool IsFinalizable(const Symbol &symbol) {
 
 bool IsCoarray(const Symbol &symbol) { return symbol.Corank() > 0; }
 
-bool IsAssumedLengthCharacter(const Symbol &symbol) {
-  if (const DeclTypeSpec * type{symbol.GetType()}) {
-    return type->category() == DeclTypeSpec::Character &&
-        type->characterTypeSpec().length().isAssumed();
-  } else {
-    return false;
-  }
-}
-
-bool IsAssumedLengthCharacterFunction(const Symbol &symbol) {
-  // Assumed-length character functions only appear as such in their
-  // definitions; their interfaces, pointers to them, and dummy procedures
-  // cannot be assumed-length.
-  return symbol.has<SubprogramDetails>() && IsAssumedLengthCharacter(symbol);
-}
-
 bool IsExternalInPureContext(const Symbol &symbol, const Scope &scope) {
   if (const auto *pureProc{semantics::FindPureProcedureContaining(&scope)}) {
     if (const Symbol * root{GetAssociationRoot(symbol)}) {
@@ -708,7 +692,7 @@ const DeclTypeSpec &FindOrInstantiateDerivedType(Scope &scope,
   }
   // Create a new instantiation of this parameterized derived type
   // for this particular distinct set of actual parameter values.
-  DeclTypeSpec &type{scope.MakeDerivedType(std::move(spec), category)};
+  DeclTypeSpec &type{scope.MakeDerivedType(category, std::move(spec))};
   InstantiateDerivedType(type.derivedTypeSpec(), scope, semanticsContext);
   return type;
 }
@@ -960,13 +944,6 @@ UltimateComponentIterator::const_iterator FindCoarrayUltimateComponent(
   UltimateComponentIterator ultimates{derived};
   return std::find_if(ultimates.begin(), ultimates.end(),
       [](const Symbol *component) { return DEREF(component).Corank() > 0; });
-}
-
-UltimateComponentIterator::const_iterator FindPointerUltimateComponent(
-    const DerivedTypeSpec &derived) {
-  UltimateComponentIterator ultimates{derived};
-  return std::find_if(ultimates.begin(), ultimates.end(),
-      [](const Symbol *component) { return IsPointer(DEREF(component)); });
 }
 
 PotentialComponentIterator::const_iterator FindEventOrLockPotentialComponent(

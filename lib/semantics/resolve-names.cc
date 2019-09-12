@@ -1653,12 +1653,7 @@ void ScopeHandler::PushScope(Scope &scope) {
   if (kind != Scope::Kind::Block) {
     ImplicitRulesVisitor::BeginScope(scope);
   }
-  // The name of a module or submodule cannot be "used" in its scope,
-  // as we read 19.3.1(2), so we allow the name to be used as a local
-  // identifier in the module or submodule too.  Same with programs
-  // (14.1(3)).
-  if (!currScope_->IsDerivedType() && kind != Scope::Kind::Module &&
-      kind != Scope::Kind::MainProgram) {
+  if (!currScope_->IsDerivedType()) {
     if (auto *symbol{scope.symbol()}) {
       // Create a dummy symbol so we can't create another one with the same
       // name. It might already be there if we previously pushed the scope.
@@ -2023,29 +2018,12 @@ void ModuleVisitor::AddUse(
         useSymbol.has<GenericDetails>()) {
       // use-associating generics with the same names: merge them into a
       // new generic in this scope
-      auto generic1{ultimate.get<GenericDetails>()};
-      generic1.set_useDetails(*useDetails);
-      // useSymbol has specific g and so does generic1
-      auto &generic2{useSymbol.get<GenericDetails>()};
-      if (generic1.specific() && generic2.specific() &&
-          generic1.specific() != generic2.specific()) {
-        Say(location,
-            "Generic interface '%s' has ambiguous specific procedures"
-            " from modules '%s' and '%s'"_err_en_US,
-            localSymbol.name(), useDetails->module().name(),
-            useSymbol.owner().GetName().value());
-      } else if (generic1.derivedType() && generic2.derivedType() &&
-          generic1.derivedType() != generic2.derivedType()) {
-        Say(location,
-            "Generic interface '%s' has ambiguous derived types"
-            " from modules '%s' and '%s'"_err_en_US,
-            localSymbol.name(), useDetails->module().name(),
-            useSymbol.owner().GetName().value());
-      } else {
-        generic1.CopyFrom(generic2);
-      }
+      auto genericDetails{ultimate.get<GenericDetails>()};
+      genericDetails.set_useDetails(*useDetails);
+      genericDetails.CopyFrom(useSymbol.get<GenericDetails>());
       EraseSymbol(localSymbol);
-      MakeSymbol(localSymbol.name(), ultimate.attrs(), std::move(generic1));
+      MakeSymbol(
+          localSymbol.name(), ultimate.attrs(), std::move(genericDetails));
     } else {
       ConvertToUseError(localSymbol, location, *useModuleScope_);
     }
@@ -2108,16 +2086,13 @@ void ModuleVisitor::BeginModule(const parser::Name &name, bool isSubmodule) {
 // If an error occurs, report it and return nullptr.
 Scope *ModuleVisitor::FindModule(const parser::Name &name, Scope *ancestor) {
   ModFileReader reader{context()};
-  Scope *scope{reader.Read(name.source, ancestor)};
+  auto *scope{reader.Read(name.source, ancestor)};
   if (!scope) {
     return nullptr;
   }
   if (scope->kind() != Scope::Kind::Module) {
     Say(name, "'%s' is not a module"_err_en_US);
     return nullptr;
-  }
-  if (DoesScopeContain(scope, currScope())) {  // 14.2.2(1)
-    Say(name, "Module '%s' cannot USE itself"_err_en_US);
   }
   Resolve(name, scope->symbol());
   return scope;
@@ -3243,7 +3218,7 @@ void DeclarationVisitor::Post(const parser::DerivedTypeSpec &x) {
     // in this scope.
     SetDeclTypeSpec(*extant);
   } else {
-    DeclTypeSpec &type{currScope().MakeDerivedType(std::move(spec), category)};
+    DeclTypeSpec &type{currScope().MakeDerivedType(category, std::move(spec))};
     if (parameterNames.empty() || currScope().IsParameterizedDerivedType()) {
       // The derived type being instantiated is not a parameterized derived
       // type, or the instantiation is within the definition of a parameterized
@@ -3350,7 +3325,8 @@ void DeclarationVisitor::Post(const parser::DerivedTypeStmt &x) {
       auto &comp{DeclareEntity<ObjectEntityDetails>(*extendsName, Attrs{})};
       comp.attrs().set(Attr::PRIVATE, extendsType->attrs().test(Attr::PRIVATE));
       comp.set(Symbol::Flag::ParentComp);
-      DeclTypeSpec &type{currScope().MakeDerivedType(*extendsType)};
+      DeclTypeSpec &type{currScope().MakeDerivedType(
+          DeclTypeSpec::TypeDerived, DerivedTypeSpec{*extendsType})};
       type.derivedTypeSpec().set_scope(*extendsType->scope());
       comp.SetType(type);
       DerivedTypeDetails &details{symbol.get<DerivedTypeDetails>()};
@@ -4075,8 +4051,8 @@ bool DeclarationVisitor::HandleUnrestrictedSpecificIntrinsicFunction(
           .has_value()) {
     // Unrestricted specific intrinsic function names (e.g., "cos")
     // are acceptable as procedure interfaces.
-    Symbol &symbol{MakeSymbol(InclusiveScope(), name.source,
-        Attrs{Attr::INTRINSIC, Attr::ELEMENTAL})};
+    Symbol &symbol{
+        MakeSymbol(InclusiveScope(), name.source, Attrs{Attr::INTRINSIC})};
     symbol.set_details(ProcEntityDetails{});
     Resolve(name, symbol);
     return true;
@@ -4792,10 +4768,12 @@ const DeclTypeSpec &ConstructVisitor::ToDeclTypeSpec(
     } else if (type.IsUnlimitedPolymorphic()) {
       return currScope().MakeClassStarType();
     } else {
-      return currScope().MakeDerivedType(type.IsPolymorphic()
-              ? DeclTypeSpec::ClassDerived
-              : DeclTypeSpec::TypeDerived,
-          DerivedTypeSpec{type.GetDerivedTypeSpec()});
+      return currScope().MakeDerivedType(
+          type.IsPolymorphic() ? DeclTypeSpec::ClassDerived
+                               : DeclTypeSpec::TypeDerived,
+          common::Clone(type.GetDerivedTypeSpec())
+
+      );
     }
   case common::TypeCategory::Character:
   default: CRASH_NO_CASE;
@@ -5273,17 +5251,14 @@ void ResolveNamesVisitor::HandleProcedureName(
 }
 
 // Variant of HandleProcedureName() for use while skimming the executable
-// part of a subprogram to catch calls to dummy procedures that are part
-// of the subprogram's interface, and to mark as procedures any symbols
-// that might otherwise have been miscategorized as objects.
+// part of a subprogram to catch calls that might be part of the subprogram's
+// interface, and to mark as procedures any symbols that might otherwise be
+// miscategorized as objects.
 void ResolveNamesVisitor::NoteExecutablePartCall(
     Symbol::Flag flag, const parser::Call &call) {
   auto &designator{std::get<parser::ProcedureDesignator>(call.t)};
   if (const auto *name{std::get_if<parser::Name>(&designator.u)}) {
-    // Subtlety: The symbol pointers in the parse tree are not set, because
-    // they might end up resolving elsewhere (e.g., construct entities in
-    // SELECT TYPE).
-    if (Symbol * symbol{currScope().FindSymbol(name->source)}) {
+    if (Symbol * symbol{FindSymbol(*name)}) {
       Symbol::Flag other{flag == Symbol::Flag::Subroutine
               ? Symbol::Flag::Function
               : Symbol::Flag::Subroutine};
