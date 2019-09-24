@@ -21,7 +21,6 @@
 #include "symbol.h"
 #include "type.h"
 #include "../parser/message.h"
-#include <forward_list>
 
 namespace Fortran::parser {
 class CharBlock;
@@ -60,15 +59,10 @@ public:
   GenericSpecInfo(const parser::DefinedOpName &x) { Analyze(x); }
   GenericSpecInfo(const parser::GenericSpec &x) { Analyze(x); }
 
-  GenericKind kind() const { return kind_; }
   const SourceName &symbolName() const { return symbolName_.value(); }
-  // Some intrinsic operators have more than one name (e.g. `operator(.eq.)` and
-  // `operator(==)`). GetAllNames() returns them all, including symbolName.
-  std::forward_list<std::string> GetAllNames() const;
   // Set the GenericKind in this symbol and resolve the corresponding
   // name if there is one
-  void Resolve(Symbol *) const;
-  Symbol *FindInScope(const Scope &) const;
+  void Resolve(Symbol *);
 
 private:
   GenericKind kind_;

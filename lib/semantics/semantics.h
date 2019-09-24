@@ -36,9 +36,9 @@ struct AssociateConstruct;
 struct BlockConstruct;
 struct CaseConstruct;
 struct DoConstruct;
-struct ChangeTeamConstruct;
 struct CriticalConstruct;
-struct ForallConstruct;
+struct ChangeTeamConstruct;
+struct ForAllConstruct;
 struct IfConstruct;
 struct SelectRankConstruct;
 struct SelectTypeConstruct;
@@ -52,7 +52,7 @@ class Symbol;
 using ConstructNode = std::variant<const parser::AssociateConstruct *,
     const parser::BlockConstruct *, const parser::CaseConstruct *,
     const parser::ChangeTeamConstruct *, const parser::CriticalConstruct *,
-    const parser::DoConstruct *, const parser::ForallConstruct *,
+    const parser::DoConstruct *, const parser::ForAllConstruct *,
     const parser::IfConstruct *, const parser::SelectRankConstruct *,
     const parser::SelectTypeConstruct *, const parser::WhereConstruct *>;
 using ConstructStack = std::vector<ConstructNode>;
@@ -144,6 +144,7 @@ public:
     constructStack_.emplace_back(&node);
   }
   void PopConstruct();
+  bool InsideDoConstruct() const;
 
 private:
   const common::IntrinsicTypeDefaultKinds &defaultKinds_;

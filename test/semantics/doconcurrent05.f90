@@ -11,9 +11,14 @@
 ! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ! See the License for the specific language governing permissions and
 ! limitations under the License.
-!
-! C1167 -- An exit-stmt shall not appear within a DO CONCURRENT construct if 
-! it belongs to that construct or an outer construct.
+
+! RUN: ${F18} -funparse-with-symbols %s 2>&1 | ${FileCheck} %s
+! CHECK: exit from DO CONCURRENT construct \\(mydoc: do concurrent\\(j=1:n\\)\\) to construct with name 'mydoc'
+! CHECK: exit from DO CONCURRENT construct \\(mydoc: do concurrent\\(j=1:n\\)\\)
+! CHECK: exit from DO CONCURRENT construct \\(mydoc: do concurrent\\(j=1:n\\)\\) to construct with name 'mytest3'
+! CHECK: exit from DO CONCURRENT construct \\(do concurrent\\(k=1:n\\)\\)
+! CHECK: exit from DO CONCURRENT construct \\(do concurrent\\(k=1:n\\)\\) to construct with name 'mytest4'
+! CHECK: exit from DO CONCURRENT construct \\(mydoc: do concurrent\\(j=1:n\\)\\) to construct with name 'mytest4'
 
 subroutine do_concurrent_test1(n)
   implicit none
@@ -21,7 +26,6 @@ subroutine do_concurrent_test1(n)
   integer :: j,k
   mydoc: do concurrent(j=1:n)
   mydo:    do k=1,n
-!ERROR: EXIT must not leave a DO CONCURRENT statement
              if (k==5) exit mydoc
              if (j==10) exit mydo
            end do mydo
@@ -32,7 +36,6 @@ subroutine do_concurrent_test2(n)
   implicit none
   integer :: j,k,n
   mydoc: do concurrent(j=1:n)
-!ERROR: EXIT must not leave a DO CONCURRENT statement
            if (k==5) exit
          end do mydoc
 end subroutine do_concurrent_test2
@@ -43,7 +46,6 @@ subroutine do_concurrent_test3(n)
   mytest3: if (n>0) then
   mydoc:    do concurrent(j=1:n)
               do k=1,n
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                 if (j==10) exit mytest3
               end do
             end do mydoc
@@ -56,10 +58,7 @@ subroutine do_concurrent_test4(n)
   mytest4: if (n>0) then
   mydoc:    do concurrent(j=1:n)
               do concurrent(k=1:n)
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                 if (k==5) exit
-!ERROR: EXIT must not leave a DO CONCURRENT statement
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                 if (j==10) exit mytest4
               end do
             end do mydoc

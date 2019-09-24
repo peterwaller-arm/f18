@@ -11,9 +11,14 @@
 ! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 ! See the License for the specific language governing permissions and
 ! limitations under the License.
-!
-! C1167 -- An exit-stmt shall not appear within a DO CONCURRENT construct if 
-! it belongs to that construct or an outer construct.
+
+! RUN: ${F18} -funparse-with-symbols %s 2>&1 | ${FileCheck} %s
+! CHECK: exit from DO CONCURRENT construct \\(nc5: do concurrent\\(i5=1:n\\)\\) to construct with name 'mytest1'
+! CHECK: exit from DO CONCURRENT construct \\(nc3: do concurrent\\(i3=1:n\\)\\) to construct with name 'mytest1'
+! CHECK: exit from DO CONCURRENT construct \\(nc1: do concurrent\\(i1=1:n\\)\\) to construct with name 'mytest1'
+! CHECK: exit from DO CONCURRENT construct \\(nc5: do concurrent\\(i5=1:n\\)\\) to construct with name 'nc3'
+! CHECK: exit from DO CONCURRENT construct \\(nc3: do concurrent\\(i3=1:n\\)\\) to construct with name 'nc3'
+! CHECK: exit from DO CONCURRENT construct \\(nc3: do concurrent\\(i3=1:n\\)\\) to construct with name 'nc2'
 
 subroutine do_concurrent_test1(n)
   implicit none
@@ -25,9 +30,6 @@ subroutine do_concurrent_test1(n)
   nc4:             do i4=1,n
   nc5:               do concurrent(i5=1:n)
   nc6:                 do i6=1,n
-!ERROR: EXIT must not leave a DO CONCURRENT statement
-!ERROR: EXIT must not leave a DO CONCURRENT statement
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                          if (i6==10) exit mytest1
                        end do nc6
                      end do nc5
@@ -48,8 +50,6 @@ subroutine do_concurrent_test2(n)
   nc4:             do i4=1,n
   nc5:               do concurrent(i5=1:n)
   nc6:                 do i6=1,n
-!ERROR: EXIT must not leave a DO CONCURRENT statement
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                          if (i6==10) exit nc3
                        end do nc6
                      end do nc5
@@ -67,7 +67,6 @@ subroutine do_concurrent_test3(n)
   nc1:       do concurrent(i1=1:n)
   nc2:         do i2=1,n
   nc3:           do concurrent(i3=1:n)
-!ERROR: EXIT must not leave a DO CONCURRENT statement
                    if (i3==4) exit nc2
   nc4:             do i4=1,n
   nc5:               do concurrent(i5=1:n)
